@@ -199,11 +199,18 @@ async def validate_phone_node(state: SecurityState) -> Command[Literal["check_pe
             goto="deny_access"
         )
     
-    # Check if locked out
-    is_locked, until = attempt_tracker.is_locked_out(phone)
+    # Normalize phone number format (remove spaces, parentheses, dashes)
+    import re
+    normalized_phone = re.sub(r'[\s\(\)\-]', '', phone)
+    if not normalized_phone.startswith('+'):
+        normalized_phone = '+' + normalized_phone
+    logger.info(f"Normalized phone from '{phone}' to '{normalized_phone}'")
+    
+    # Check if locked out (use normalized phone)
+    is_locked, until = attempt_tracker.is_locked_out(normalized_phone)
     if is_locked:
         audit_logger.log(AuditEntry(
-            phone=phone,
+            phone=normalized_phone,
             action="access_attempt",
             result="blocked",
             details=f"Account locked until {until}"
@@ -216,19 +223,12 @@ async def validate_phone_node(state: SecurityState) -> Command[Literal["check_pe
             goto="deny_access"
         )
     
-    # Normalize phone number format (remove spaces, parentheses, dashes)
-    import re
-    normalized_phone = re.sub(r'[\s\(\)\-]', '', phone)
-    if not normalized_phone.startswith('+'):
-        normalized_phone = '+' + normalized_phone
-    logger.info(f"Normalized phone from '{phone}' to '{normalized_phone}'")
-    
     # Check if phone is authorized
     authorized_numbers = get_authorized_numbers()
     if normalized_phone not in authorized_numbers:
         attempt_tracker.record_failed_attempt(normalized_phone, "unauthorized_number")
         audit_logger.log(AuditEntry(
-            phone=phone,
+            phone=normalized_phone,
             action="access_attempt",
             result="denied",
             details="Unauthorized phone number"
