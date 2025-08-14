@@ -110,60 +110,53 @@ async def handle_ghl_webhook(
             # Step 3: Send message to supervisor graph
             logger.info(f"Sending message to supervisor graph on thread {thread_id}")
             
-            run_response = await client.post(
-                f"{base_url}/threads/{thread_id}/runs/wait",
-                json={
-                    "assistant_id": "supervisor",
-                    "input": {
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": webhook_data.message
+            # Return immediately to GHL to prevent retries, process in background
+            import asyncio
+            
+            async def process_in_background():
+                try:
+                    run_response = await client.post(
+                        f"{base_url}/threads/{thread_id}/runs/wait",
+                        json={
+                            "assistant_id": "supervisor",
+                            "input": {
+                                "messages": [
+                                    {
+                                        "role": "user",
+                                        "content": webhook_data.message
+                                    }
+                                ],
+                                "phone_number": phone,
+                                "contact_id": webhook_data.id
+                            },
+                            "metadata": thread_metadata,
+                            "config": {
+                                "configurable": thread_metadata
                             }
-                        ],
-                        "phone_number": phone,
-                        "contact_id": webhook_data.id
-                    },
-                    "metadata": thread_metadata,
-                    "config": {
-                        "configurable": thread_metadata
-                    }
+                        },
+                        timeout=60.0  # Give more time for processing
+                    )
+                    if run_response.status_code == 200:
+                        logger.info(f"Successfully processed message for contact {webhook_data.id}")
+                    else:
+                        logger.error(f"Failed to process message: {run_response.text}")
+                except Exception as e:
+                    logger.error(f"Background processing error: {e}")
+            
+            # Start background processing
+            asyncio.create_task(process_in_background())
+            
+            # Return immediately to prevent GHL retries
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "message": "Webhook received, processing message",
+                    "contact_id": webhook_data.id,
+                    "thread_id": thread_id,
+                    "timestamp": datetime.utcnow().isoformat()
                 },
-                timeout=60.0  # Give more time for processing
+                status_code=200
             )
-            
-            if run_response.status_code != 200:
-                logger.error(f"Failed to run supervisor: {run_response.text}")
-                raise HTTPException(status_code=500, detail="Failed to process message")
-            
-            # Step 4: Extract the response
-            result = run_response.json()
-            
-            # Get the final response from the result
-            final_response = None
-            if "final_response" in result:
-                final_response = result["final_response"]
-            elif "messages" in result and len(result["messages"]) > 0:
-                # Get the last AI message
-                for msg in reversed(result["messages"]):
-                    if msg.get("type") == "ai":
-                        final_response = msg.get("content", "I've processed your request.")
-                        break
-            
-            if not final_response:
-                final_response = "Message received and processed successfully."
-            
-            # Step 5: Return response to GHL
-            response_data = {
-                "success": True,
-                "thread_id": thread_id,
-                "message": final_response,
-                "contact_id": webhook_data.id,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-            logger.info(f"Successfully processed GHL webhook for contact {webhook_data.id}")
-            return JSONResponse(content=response_data, status_code=200)
             
     except httpx.TimeoutException:
         logger.error("Timeout while processing webhook")
