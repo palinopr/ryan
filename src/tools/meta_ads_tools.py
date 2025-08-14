@@ -252,7 +252,7 @@ class DynamicMetaSDK:
                 )
             return self.get_campaign_insights_dynamic(
                 campaign_id,
-                query.get("date_preset", "last_30d"),
+                query.get("date_preset", "maximum"),  # Default to maximum for all-time data
                 query.get("fields"),
                 query.get("breakdowns"),
                 query.get("time_increment")
@@ -300,7 +300,7 @@ class DynamicMetaSDK:
     
     def get_campaign_insights_dynamic(self,
                                       campaign_id: str,
-                                      date_preset: str = "last_30d",
+                                      date_preset: str = "maximum",
                                       fields: Optional[List[str]] = None,
                                       breakdowns: Optional[List[str]] = None,
                                       time_increment: Optional[str] = None) -> List[Dict]:

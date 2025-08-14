@@ -290,7 +290,7 @@ Rules:
 - Prefer operations that match user intent; use get_campaign_insights for high-level metrics and breakdowns; get_adsets_insights when asking per-adset/city; use custom_query when fetching object fields or non-insights edges.
 - If a campaign is implied but no ID provided, set needs_search=true and populate search with type="campaigns" and a term (e.g., "SENDÉ Tour").
 - Include fields needed to answer (e.g., impressions, clicks, spend, ctr, cpc, cpm, actions, action_values, purchase_roas). If asking about conversions/ROAS, include actions and action_values.
-- Always include a date_preset. If none given, use "maximum" to get all-time data. Current date_hint: "{date_hint}".
+- MANDATORY: Always include "date_preset" field in EVERY query. Use "{date_hint}" as the value. DO NOT use "today" unless explicitly requested by the user.
 - Never use "city" as a breakdown - cities are AdSet names in Meta Ads.
 
 User question: {question}
@@ -307,6 +307,23 @@ Return only JSON.
             return None
         plan = _json.loads(m.group())
         logger.info(f"Generated plan: {json.dumps(plan, indent=2)}")
+        
+        # CRITICAL FIX: Enforce date_preset='maximum' when date_hint is 'maximum'
+        # This ensures we get all-time data when no specific time is requested
+        if date_hint == 'maximum' and plan.get('queries'):
+            for query in plan['queries']:
+                if 'query' in query and isinstance(query['query'], dict):
+                    # Check if date_preset is missing or set to 'today'
+                    if query['query'].get('date_preset') in [None, 'today', '']:
+                        logger.warning(f"Overriding date_preset from '{query['query'].get('date_preset')}' to 'maximum'")
+                        query['query']['date_preset'] = 'maximum'
+                elif isinstance(query, dict):
+                    # Direct query format
+                    if query.get('date_preset') in [None, 'today', '']:
+                        logger.warning(f"Overriding date_preset from '{query.get('date_preset')}' to 'maximum'")
+                        query['date_preset'] = 'maximum'
+        
+        logger.info(f"Plan after date_preset enforcement: {json.dumps(plan, indent=2)}")
     except Exception:
         return None
 
