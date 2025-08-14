@@ -472,9 +472,8 @@ def format_city_data_for_client(data: List[Dict], question: str = None) -> str:
                 break
         
         if city_data:
-            # Format focused response for single city
-            city_name = city_data.get('adset_name', '').replace('Sende Tour - ', '')
-            formatted = f"📊 **{city_name.upper()}**\n\n"
+            # Format focused response for single city - Clean WhatsApp format
+            city_name = city_data.get('adset_name', '').replace('Sende Tour - ', '').replace('SENDE Tour - ', '')
             
             spend = float(city_data.get('spend', 0))
             impressions = int(city_data.get('impressions', 0))
@@ -493,30 +492,42 @@ def format_city_data_for_client(data: List[Dict], question: str = None) -> str:
             
             roas = (revenue / spend) if spend > 0 else 0
             
-            # Contextual response based on what they're asking
-            if 'how' in question_lower or 'como' in question_lower:
-                formatted += f"Performance: "
-                if roas > 15:
-                    formatted += f"Excellent! "
-                elif roas > 10:
-                    formatted += f"Going well! "
-                else:
-                    formatted += f"Room for improvement. "
+            # Clean WhatsApp format without excessive formatting
+            formatted = f"*{city_name.upper()} Campaign Update*\n\n"
             
-            formatted += f"{impressions:,} people reached, {clicks} clicks ({ctr:.1f}% interest), "
-            formatted += f"${spend:.2f} spent"
+            # Performance summary
+            if 'how' in question_lower or 'como' in question_lower or 'va' in question_lower:
+                if roas > 20:
+                    formatted += "✅ Crushing it!\n\n"
+                elif roas > 15:
+                    formatted += "🔥 Performing excellently\n\n"
+                elif roas > 10:
+                    formatted += "👍 Going strong\n\n"
+                elif roas > 5:
+                    formatted += "📈 Steady progress\n\n"
+                else:
+                    formatted += "🎯 Building momentum\n\n"
+            
+            # Core metrics - clean and simple
+            formatted += f"Reach: {impressions:,} people\n"
+            formatted += f"Engagement: {clicks} clicks\n"
+            formatted += f"Investment: ${spend:.2f}\n"
             
             if sales > 0:
-                formatted += f", {sales} tickets sold for ${revenue:,.2f}"
-            if roas > 0:
-                formatted += f", {roas:.1f}x return"
+                formatted += f"\n💰 Results:\n"
+                formatted += f"• {sales} tickets sold\n"
+                formatted += f"• ${revenue:,.2f} revenue\n"
+                formatted += f"• {roas:.1f}x ROAS"
+            elif clicks > 0:
+                # Show engagement metrics if no sales yet
+                formatted += f"\n📊 Engagement Rate: {ctr:.1f}%"
             
             return formatted
         else:
             return f"No data available for {city_mentioned}."
     
     # If asking for full report or comparison
-    formatted = "📊 **TOUR CAMPAIGN - CITY PERFORMANCE REPORT**\n\n"
+    formatted = "*SENDÉ TOUR - All Cities Report*\n\n"
     
     # Calculate totals
     total_reach = sum(int(city.get('impressions', 0)) for city in data)
@@ -556,13 +567,13 @@ def format_city_data_for_client(data: List[Dict], question: str = None) -> str:
         # Calculate ROAS
         roas = (revenue / spend) if spend > 0 else 0
         
-        city_report = f"""🏙️ **{city_name.upper()}**
-• People Reached: {impressions:,}
-• Clicked to Learn More: {clicks} ({ctr:.1f}% interest rate)
-• Ad Spend: ${spend:.2f}
-• Tickets Sold: {purchases}
-• Ticket Revenue: ${revenue:,.2f}
-• Return on Ad Spend: {roas:.1f}x
+        city_report = f"""*{city_name.upper()}*
+Reach: {impressions:,}
+Clicks: {clicks}
+Spend: ${spend:.2f}
+Sales: {purchases} tickets = ${revenue:,.2f}
+ROAS: {roas:.1f}x
+
 """
         city_reports.append((roas, city_report))
     
@@ -573,17 +584,18 @@ def format_city_data_for_client(data: List[Dict], question: str = None) -> str:
     overall_roas = (total_revenue / total_spend) if total_spend > 0 else 0
     avg_ctr = (total_clicks / total_reach * 100) if total_reach > 0 else 0
     
-    formatted += f"""📈 **CAMPAIGN TOTALS**
-• Total Reach: {total_reach:,} people
-• Total Clicks: {total_clicks:,} ({avg_ctr:.1f}% average interest)
-• Total Ad Spend: ${total_spend:.2f}
-• Total Tickets Sold: {total_sales}
-• Total Revenue: ${total_revenue:,.2f}
-• Overall Return: ${overall_roas:.1f} earned per $1 spent
+    formatted += f"""*Campaign Summary*
+Total Reach: {total_reach:,} people
+Total Engagement: {total_clicks:,} clicks
+Investment: ${total_spend:.2f}
+
+💰 *Results*
+Tickets Sold: {total_sales}
+Revenue: ${total_revenue:,.2f}
+ROAS: {overall_roas:.1f}x
 
 ---
-
-**PERFORMANCE BY CITY:**
+*By City:*
 
 """
     

@@ -304,7 +304,8 @@ async def compile_response_node(state: SupervisorState) -> Command[Literal["ghl_
     
     if meta_response and not meta_response.get('error'):
         if meta_response.get('data'):
-            response_parts.append(f"📊 **Campaign Data**: {meta_response['data']}")
+            # Just use the data directly, no prefix needed
+            response_parts.append(meta_response['data'])
         if meta_response.get('metrics'):
             metrics = meta_response['metrics']
             response_parts.append(f"📈 **Metrics**: Spend: ${metrics.get('total_spend', 0):,.2f}, Impressions: {metrics.get('total_impressions', 0):,}")
