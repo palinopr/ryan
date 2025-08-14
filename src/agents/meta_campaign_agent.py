@@ -241,6 +241,10 @@ async def plan_and_execute_dynamic_queries(question: str,
     if restriction_msg:
         return restriction_msg
     
+    # Use default campaign if not provided
+    if not campaign_id:
+        campaign_id = os.getenv("DEFAULT_CAMPAIGN_ID", "120232002620350525")
+    
     settings = get_settings()
 
     # Choose model if available
@@ -332,7 +336,15 @@ Return only JSON.
         # Ensure campaign_id presence when appropriate
         if campaign_id:
             for q in plan.get("queries", []):
-                if q.get("object_type") in (None, "campaign") and not q.get("object_id"):
+                # For get_adsets_insights, we need campaign_id
+                if q.get("operation") == "get_adsets_insights":
+                    if not q.get("campaign_id"):
+                        q["campaign_id"] = campaign_id
+                    # Also set object_id if not present (for compatibility)
+                    if not q.get("object_id"):
+                        q["object_id"] = campaign_id
+                # For other campaign operations
+                elif q.get("object_type") in (None, "campaign") and not q.get("object_id"):
                     q["object_id"] = campaign_id
     except Exception:
         # If search fails, continue; downstream may still work for generic ops
