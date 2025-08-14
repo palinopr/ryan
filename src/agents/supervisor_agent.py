@@ -514,6 +514,16 @@ async def validate_security_node(state: SupervisorState) -> Command[Literal["sup
     
     # In production, validate through security agent
     from src.agents.security_agent import validate_access
+    import re
+    
+    # Normalize phone number format before validation
+    if phone_number:
+        # Remove spaces, parentheses, dashes from phone
+        normalized_phone = re.sub(r'[\s\(\)\-]', '', phone_number)
+        if not normalized_phone.startswith('+'):
+            normalized_phone = '+' + normalized_phone
+        logger.info(f"Supervisor normalized phone from '{phone_number}' to '{normalized_phone}'")
+        phone_number = normalized_phone
     
     try:
         # Determine requested action from the latest user message
