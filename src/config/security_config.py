@@ -72,6 +72,62 @@ SECURITY_CONFIG = {
             "permissions": ["read"],
             "allowed_campaigns": ["120232002620350525"],
             "campaign_access": "restricted"
+        },
+        "user_646": {
+            "phone": "+16467213078",  # User 1
+            "name": "Team Member 646",
+            "role": "manager",
+            "permissions": ["read", "write", "send", "update"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
+        },
+        "user_787": {
+            "phone": "+17875681432",  # User 2
+            "name": "Team Member 787",
+            "role": "manager",
+            "permissions": ["read", "write", "send", "update"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
+        },
+        "user_786_647": {
+            "phone": "+17866471509",  # User 3
+            "name": "Team Member 786-647",
+            "role": "manager",
+            "permissions": ["read", "write", "send", "update"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
+        },
+        "user_786_537": {
+            "phone": "+17865372387",  # User 4
+            "name": "Team Member 786-537",
+            "role": "manager",
+            "permissions": ["read", "write", "send", "update"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
+        },
+        "user_949": {
+            "phone": "+19492871526",  # User 5
+            "name": "Team Member 949",
+            "role": "manager",
+            "permissions": ["read", "write", "send", "update"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
+        },
+        "user_512": {
+            "phone": "+15129233165",  # User 6
+            "name": "Team Member 512",
+            "role": "manager",
+            "permissions": ["read", "write", "send", "update"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
+        },
+        "user_972": {
+            "phone": "+19728396546",  # User 7
+            "name": "Team Member 972",
+            "role": "manager",
+            "permissions": ["read", "write", "send", "update"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
         }
     },
     
