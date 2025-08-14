@@ -1,6 +1,7 @@
 """
 Security Agent - Phone Verification and Permission Management
 Validates phone numbers and enforces permissions before allowing access
+Version: 1.2.0 - Added phone normalization and auto-unlock
 """
 import os
 import json
