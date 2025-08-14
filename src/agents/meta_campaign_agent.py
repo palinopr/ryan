@@ -72,10 +72,12 @@ async def check_query_restrictions(question: str) -> Optional[str]:
     ALWAYS ALLOWED (return "allowed"):
     - "How is [city/location] doing?" - asking for performance metrics
     - "How is [campaign] performing?" - asking for results
+    - "How many tickets sold" - sales data questions
+    - Sales numbers, revenue, and ticket counts for any time period
     - Performance metrics (CTR, CPC, spend, impressions, ROAS, etc.)
     - Campaign/adset/ad data and results
     - Geographic performance (Miami, LA, NYC, etc.)
-    - Time-based reports (today, yesterday, this week)
+    - Time-based reports (today, yesterday, this week, this month, all-time)
     - Comparisons between cities or time periods
     - Any questions about WHAT the results/metrics are
     
@@ -310,17 +312,25 @@ Return only JSON.
         
         # CRITICAL FIX: Enforce date_preset='maximum' when date_hint is 'maximum'
         # This ensures we get all-time data when no specific time is requested
+        # BUT: Don't override if date_hint is something else (like 'today')
         if date_hint == 'maximum' and plan.get('queries'):
             for query in plan['queries']:
                 if 'query' in query and isinstance(query['query'], dict):
-                    # Check if date_preset is missing or set to 'today'
-                    if query['query'].get('date_preset') in [None, 'today', '']:
+                    # Only override if date_preset is missing or empty (not if it's 'today' when user asked for today)
+                    if query['query'].get('date_preset') in [None, '']:
                         logger.warning(f"Overriding date_preset from '{query['query'].get('date_preset')}' to 'maximum'")
+                        query['query']['date_preset'] = 'maximum'
+                    elif query['query'].get('date_preset') == 'today':
+                        # This shouldn't happen when date_hint is 'maximum'
+                        logger.warning(f"AI generated 'today' when date_hint was 'maximum' - overriding to 'maximum'")
                         query['query']['date_preset'] = 'maximum'
                 elif isinstance(query, dict):
                     # Direct query format
-                    if query.get('date_preset') in [None, 'today', '']:
+                    if query.get('date_preset') in [None, '']:
                         logger.warning(f"Overriding date_preset from '{query.get('date_preset')}' to 'maximum'")
+                        query['date_preset'] = 'maximum'
+                    elif query.get('date_preset') == 'today' and date_hint == 'maximum':
+                        logger.warning(f"AI generated 'today' when date_hint was 'maximum' - overriding to 'maximum'")
                         query['date_preset'] = 'maximum'
         
         logger.info(f"Plan after date_preset enforcement: {json.dumps(plan, indent=2)}")
