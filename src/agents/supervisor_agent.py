@@ -32,6 +32,7 @@ class SupervisorState(TypedDict):
     ghl_message_id: Optional[str]  # GHL message ID after sending
     current_request: Optional[str]
     intent: Optional[str]  # meta, ghl, both
+    language: Optional[str]  # Detected language: es, en, etc.
     meta_response: Optional[Dict]
     ghl_response: Optional[Dict]
     final_response: Optional[str]
@@ -74,37 +75,40 @@ class IntentAnalyzer:
                     context += f"Previous: {content}\n"
         
         prompt = f"""
-        You are a smart assistant helping analyze tour campaign messages.
+        You are a smart multilingual assistant helping analyze tour campaign messages.
         Be intelligent about understanding what users really want, not just keywords.
         
         {f"Conversation context: {context}" if context else ""}
         Current message: {message}
         
-        Understand the REAL intent:
-        - "como va miami" = user wants Miami's specific performance
-        - "how are all cities" = user wants overview of all cities  
-        - "whats my roas" = user wants ROAS metric
-        - Greetings should be recognized as greetings
-        - Follow-up questions should use context
+        First, detect the language of the message. Common examples:
+        - Spanish: "como va miami", "cuales son las ciudades", "como esta creada la campaña"
+        - English: "how is miami doing", "what cities are there", "how was the campaign created"
+        
+        Understand the REAL intent - don't match keywords blindly:
+        - Questions about specific locations should query that location's data
+        - Questions about campaign creation/setup are informational, not location-specific
+        - "las" in Spanish means "the" (plural), NOT Los Angeles
         
         Think about:
-        1. Are they asking about something specific or general?
-        2. Do they want a quick answer or detailed report?
-        3. Is this a greeting, question, or command?
+        1. What language is the user speaking?
+        2. Are they asking about data or how something works?
+        3. Do they want specific metrics or general information?
         
         Return JSON:
         {{
-            "intent": "meta" (campaign data), "greeting", "question", or "unknown",
+            "language": "es" (Spanish), "en" (English), or detected language code,
+            "intent": "meta" (campaign data), "information" (how things work), "greeting", or "unknown",
             "primary_agent": "meta" or null,
-            "scope": "specific" (one thing) or "general" (overview),
-            "focus": what specifically (e.g. "miami", "roas", "all_cities"),
+            "scope": "specific" or "general",
+            "focus": what they're asking about,
             "detail_level": "brief" or "detailed",
             "reasoning": "why interpreted this way",
             "extracted_entities": {{
-                "location": specific city if mentioned,
+                "location": specific location if clearly mentioned (not guessed),
                 "metric": specific metric if mentioned,
                 "time_period": if mentioned,
-                "comparison": true if comparing things
+                "question_type": "data" or "informational"
             }}
         }}
         """
@@ -149,10 +153,11 @@ async def analyze_intent_node(state: SupervisorState) -> Command[Literal["meta_a
         logger.info(f"Intent detected: {intent}")
         logger.info(f"Reasoning: {intent_analysis.get('reasoning')}")
         
-        # Store the analysis
+        # Store the analysis including language
         update_data = {
             "current_request": user_message,
-            "intent": intent
+            "intent": intent,
+            "language": intent_analysis.get('language', 'en')  # Default to English if not detected
         }
         
         # ALWAYS route to Meta Ads Agent for user queries
@@ -177,10 +182,11 @@ async def route_to_meta_node(state: SupervisorState) -> Command[Literal["supervi
     
     meta_graph = create_dynamic_meta_campaign_graph()
     
-    # Prepare state for Meta agent
+    # Prepare state for Meta agent, including language
     meta_state = {
         "messages": [HumanMessage(content=state.get('current_request'))],
-        "analysis_type": "conversational"
+        "analysis_type": "conversational",
+        "language": state.get('language', 'en')  # Pass detected language
     }
     
     try:

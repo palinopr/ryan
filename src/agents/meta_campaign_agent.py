@@ -132,6 +132,7 @@ class MetaCampaignState(MessagesState):
     analysis_type: str = "comprehensive"
     current_question: Optional[str] = None
     phone_number: Optional[str] = None  # User's phone for security context
+    language: str = "en"  # Language for responses (es, en, etc.)
     
     # Intent detection
     question_intent: Optional[str] = None  # quick_stat, location, comparison, report, etc.
@@ -231,7 +232,8 @@ Provide your response as JSON with these keys:
 # --- Dynamic NL-to-SDK Planner/Executor ------------------------------------
 async def plan_and_execute_dynamic_queries(question: str,
                                            campaign_id: Optional[str],
-                                           date_hint: Optional[str] = None) -> Optional[str]:
+                                           date_hint: Optional[str] = None,
+                                           language: str = "en") -> Optional[str]:
     """
     Use an LLM to plan Meta SDK queries from natural language, execute them via tools,
     and synthesize an answer. Returns None on failure (caller should fallback).
@@ -380,10 +382,8 @@ Return only JSON.
                 any(q.get('operation') == 'get_adsets_insights' for q in queries)):
                 is_city_data = True
             
-            # Also check if user asked about cities/locations
-            location_keywords = ['city', 'cities', 'location', 'miami', 'brooklyn', 'chicago', 'houston', 'los angeles', 'la', 'new york', 'nyc']
-            if any(keyword in question.lower() for keyword in location_keywords):
-                is_city_data = True
+            # Don't hardcode cities - let the data tell us if it's city/location data
+            # Cities are represented as adsets in the campaign
         
         # If it's city data, use the client-friendly formatter
         if is_city_data and items:
@@ -434,29 +434,28 @@ Return only JSON.
         return None
 
 
-def format_city_data_for_client(data: List[Dict], question: str = None) -> str:
-    """Format city/adset data based on the user's question context"""
+def format_city_data_for_client(data: List[Dict], question: str = None, language: str = "en") -> str:
+    """Format city/adset data based on the user's question context - dynamically discovers cities"""
     if not data:
+        if language == "es":
+            return "No hay datos de campaña disponibles para el período seleccionado."
         return "No campaign data available for the selected period."
     
     # Intelligently determine what the user is asking for
     question_lower = question.lower() if question else ""
     
-    # Check if asking about a specific city
-    city_mentioned = None
-    city_keywords = {
-        'miami': 'Miami',
-        'brooklyn': 'Brooklyn', 
-        'chicago': 'Chicago',
-        'houston': 'Houston',
-        'la': 'LA',
-        'los angeles': 'LA',
-        'nyc': 'Brooklyn',
-        'new york': 'Brooklyn'
-    }
+    # Dynamically discover what cities/locations are in the data
+    available_cities = {}
+    for item in data:
+        adset_name = item.get('adset_name', '').replace('Sende Tour - ', '').replace('SENDE Tour - ', '')
+        if adset_name:
+            available_cities[adset_name.lower()] = adset_name
     
-    for keyword, city_name in city_keywords.items():
-        if keyword in question_lower:
+    # Check if user is asking about a specific city (without hardcoding)
+    city_mentioned = None
+    for city_key, city_name in available_cities.items():
+        # Check if the city name appears in the question
+        if city_key in question_lower:
             city_mentioned = city_name
             break
     
@@ -492,35 +491,63 @@ def format_city_data_for_client(data: List[Dict], question: str = None) -> str:
             
             roas = (revenue / spend) if spend > 0 else 0
             
-            # Clean WhatsApp format without excessive formatting
-            formatted = f"*{city_name.upper()} Campaign Update*\n\n"
-            
-            # Performance summary
-            if 'how' in question_lower or 'como' in question_lower or 'va' in question_lower:
-                if roas > 20:
-                    formatted += "✅ Crushing it!\n\n"
-                elif roas > 15:
-                    formatted += "🔥 Performing excellently\n\n"
-                elif roas > 10:
-                    formatted += "👍 Going strong\n\n"
-                elif roas > 5:
-                    formatted += "📈 Steady progress\n\n"
-                else:
-                    formatted += "🎯 Building momentum\n\n"
-            
-            # Core metrics - clean and simple
-            formatted += f"Reach: {impressions:,} people\n"
-            formatted += f"Engagement: {clicks} clicks\n"
-            formatted += f"Investment: ${spend:.2f}\n"
-            
-            if sales > 0:
-                formatted += f"\n💰 Results:\n"
-                formatted += f"• {sales} tickets sold\n"
-                formatted += f"• ${revenue:,.2f} revenue\n"
-                formatted += f"• {roas:.1f}x ROAS"
-            elif clicks > 0:
-                # Show engagement metrics if no sales yet
-                formatted += f"\n📊 Engagement Rate: {ctr:.1f}%"
+            # Clean WhatsApp format - bilingual support
+            if language == "es":
+                formatted = f"*Campaña {city_name.upper()}*\n\n"
+                
+                # Performance summary in Spanish
+                if 'como' in question_lower or 'va' in question_lower or 'está' in question_lower:
+                    if roas > 20:
+                        formatted += "✅ ¡Excelente rendimiento!\n\n"
+                    elif roas > 15:
+                        formatted += "🔥 Muy buenos resultados\n\n"
+                    elif roas > 10:
+                        formatted += "👍 Buen progreso\n\n"
+                    elif roas > 5:
+                        formatted += "📈 Avanzando bien\n\n"
+                    else:
+                        formatted += "🎯 Construyendo momentum\n\n"
+                
+                # Core metrics in Spanish
+                formatted += f"Alcance: {impressions:,} personas\n"
+                formatted += f"Interacciones: {clicks} clics\n"
+                formatted += f"Inversión: ${spend:.2f}\n"
+                
+                if sales > 0:
+                    formatted += f"\n💰 Resultados:\n"
+                    formatted += f"• {sales} tickets vendidos\n"
+                    formatted += f"• ${revenue:,.2f} en ventas\n"
+                    formatted += f"• {roas:.1f}x retorno"
+                elif clicks > 0:
+                    formatted += f"\n📊 Tasa de interacción: {ctr:.1f}%"
+            else:
+                formatted = f"*{city_name.upper()} Campaign Update*\n\n"
+                
+                # Performance summary in English
+                if 'how' in question_lower or 'como' in question_lower or 'va' in question_lower:
+                    if roas > 20:
+                        formatted += "✅ Crushing it!\n\n"
+                    elif roas > 15:
+                        formatted += "🔥 Performing excellently\n\n"
+                    elif roas > 10:
+                        formatted += "👍 Going strong\n\n"
+                    elif roas > 5:
+                        formatted += "📈 Steady progress\n\n"
+                    else:
+                        formatted += "🎯 Building momentum\n\n"
+                
+                # Core metrics in English
+                formatted += f"Reach: {impressions:,} people\n"
+                formatted += f"Engagement: {clicks} clicks\n"
+                formatted += f"Investment: ${spend:.2f}\n"
+                
+                if sales > 0:
+                    formatted += f"\n💰 Results:\n"
+                    formatted += f"• {sales} tickets sold\n"
+                    formatted += f"• ${revenue:,.2f} revenue\n"
+                    formatted += f"• {roas:.1f}x ROAS"
+                elif clicks > 0:
+                    formatted += f"\n📊 Engagement Rate: {ctr:.1f}%"
             
             return formatted
         else:
@@ -749,11 +776,12 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
         campaign_id = state.get('campaign_id')
         answer = ""
         
-        # First try dynamic NL-to-SDK planning for arbitrary questions
+        # First try dynamic NL-to-SDK planning for arbitrary questions with language support
         dynamic_answer = await plan_and_execute_dynamic_queries(
             question=full_query or user_message,
             campaign_id=campaign_id,
-            date_hint=detected_entities.get('time')
+            date_hint=detected_entities.get('time'),
+            language=state.get('language', 'en')
         )
         if dynamic_answer:
             return Command(
@@ -827,25 +855,45 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
                     best = cities_data[0] if cities_data else None
                     if best:
                         unit = '%' if actual_metric == 'ctr' else ('x' if actual_metric == 'purchase_roas' else '')
-                        answer = f"{best['city']} has the best {metric.upper()} at {best['metric_value']:.2f}{unit}. "
-                        others = [f"{c['city']} ({c['metric_value']:.2f}{unit})" for c in cities_data[1:4]]
-                        if others:
-                            answer += f"The other cities are: {', '.join(others)}."
+                        if state.get('language') == 'es':
+                            answer = f"{best['city']} tiene el mejor {metric.upper()} con {best['metric_value']:.2f}{unit}. "
+                            others = [f"{c['city']} ({c['metric_value']:.2f}{unit})" for c in cities_data[1:4]]
+                            if others:
+                                answer += f"Las otras ciudades son: {', '.join(others)}."
+                        else:
+                            answer = f"{best['city']} has the best {metric.upper()} at {best['metric_value']:.2f}{unit}. "
+                            others = [f"{c['city']} ({c['metric_value']:.2f}{unit})" for c in cities_data[1:4]]
+                            if others:
+                                answer += f"The other cities are: {', '.join(others)}."
                 elif 'worst' in full_query or 'lowest' in full_query:
                     worst = cities_data[-1] if cities_data else None
                     if worst:
                         unit = '%' if actual_metric == 'ctr' else ('x' if actual_metric == 'purchase_roas' else '')
-                        answer = f"{worst['city']} has the lowest {metric.upper()} at {worst['metric_value']:.2f}{unit}. "
-                        better = [f"{c['city']} ({c['metric_value']:.2f}{unit})" for c in cities_data[:3]]
-                        if better:
-                            answer += f"Better performing cities: {', '.join(better)}."
+                        if state.get('language') == 'es':
+                            answer = f"{worst['city']} tiene el {metric.upper()} más bajo con {worst['metric_value']:.2f}{unit}. "
+                            better = [f"{c['city']} ({c['metric_value']:.2f}{unit})" for c in cities_data[:3]]
+                            if better:
+                                answer += f"Ciudades con mejor rendimiento: {', '.join(better)}."
+                        else:
+                            answer = f"{worst['city']} has the lowest {metric.upper()} at {worst['metric_value']:.2f}{unit}. "
+                            better = [f"{c['city']} ({c['metric_value']:.2f}{unit})" for c in cities_data[:3]]
+                            if better:
+                                answer += f"Better performing cities: {', '.join(better)}."
                 else:
                     unit = '%' if actual_metric == 'ctr' else ('x' if actual_metric == 'purchase_roas' else '')
-                    answer = f"Here's the {metric.upper()} breakdown by city: "
-                    city_list = [f"{c['city']}: {c['metric_value']:.2f}{unit}" for c in cities_data[:5]]
-                    answer += ", ".join(city_list)
+                    if state.get('language') == 'es':
+                        answer = f"Aquí está el desglose de {metric.upper()} por ciudad: "
+                        city_list = [f"{c['city']}: {c['metric_value']:.2f}{unit}" for c in cities_data[:5]]
+                        answer += ", ".join(city_list)
+                    else:
+                        answer = f"Here's the {metric.upper()} breakdown by city: "
+                        city_list = [f"{c['city']}: {c['metric_value']:.2f}{unit}" for c in cities_data[:5]]
+                        answer += ", ".join(city_list)
             else:
-                answer = "I couldn't fetch the comparison data. Please try again."
+                if state.get('language') == 'es':
+                    answer = "No pude obtener los datos de comparación. Por favor intenta de nuevo."
+                else:
+                    answer = "I couldn't fetch the comparison data. Please try again."
                 
         else:
             # Default: Quick overview of campaign performance
@@ -900,8 +948,12 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
             overall_ctr = (totals['clicks'] / totals['impressions'] * 100) if totals['impressions'] > 0 else 0
             overall_roas = (totals['revenue'] / totals['spend']) if totals['spend'] > 0 else 0
             
-            # Check if user wants detailed report
-            if any(word in full_query for word in ['report', 'breakdown', 'details', 'each city', 'all']):
+            # Check if user wants detailed report - bilingual
+            spanish_report_words = ['reporte', 'desglose', 'detalles', 'cada ciudad', 'todas']
+            english_report_words = ['report', 'breakdown', 'details', 'each city', 'all']
+            report_words = spanish_report_words if state.get('language') == 'es' else english_report_words
+            
+            if any(word in full_query for word in report_words):
                 # Detailed city-by-city breakdown
                 answer = f"📊 SENDÉ TOUR CAMPAIGN REPORT ({time_period.upper()})\n\n"
                 answer += f"OVERVIEW:\n"
@@ -927,15 +979,25 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
                         answer += f"  • Clicks: {clicks}\n"
                         answer += f"  • CTR: {ctr:.2f}%\n"
             else:
-                # Quick summary
-                answer = f"Your SENDÉ Tour campaign is running in {len(totals['cities'])} cities "
-                answer += f"({', '.join(totals['cities'][:3])}{'...' if len(totals['cities']) > 3 else ''}). "
-                answer += f"{time_period.title()} performance: ${totals['spend']:.2f} spent, "
-                answer += f"{totals['impressions']:,} impressions, {totals['clicks']} clicks "
-                answer += f"({overall_ctr:.2f}% CTR)"
-                if overall_roas > 0:
-                    answer += f", {overall_roas:.2f}x ROAS"
-                answer += "."
+                # Quick summary - bilingual
+                if state.get('language') == 'es':
+                    answer = f"Tu campaña de la Gira SENDÉ está activa en {len(totals['cities'])} ciudades "
+                    answer += f"({', '.join(totals['cities'][:3])}{'...' if len(totals['cities']) > 3 else ''}). "
+                    answer += f"Rendimiento {time_period}: ${totals['spend']:.2f} gastados, "
+                    answer += f"{totals['impressions']:,} impresiones, {totals['clicks']} clics "
+                    answer += f"({overall_ctr:.2f}% CTR)"
+                    if overall_roas > 0:
+                        answer += f", {overall_roas:.2f}x ROAS"
+                    answer += "."
+                else:
+                    answer = f"Your SENDÉ Tour campaign is running in {len(totals['cities'])} cities "
+                    answer += f"({', '.join(totals['cities'][:3])}{'...' if len(totals['cities']) > 3 else ''}). "
+                    answer += f"{time_period.title()} performance: ${totals['spend']:.2f} spent, "
+                    answer += f"{totals['impressions']:,} impressions, {totals['clicks']} clicks "
+                    answer += f"({overall_ctr:.2f}% CTR)"
+                    if overall_roas > 0:
+                        answer += f", {overall_roas:.2f}x ROAS"
+                    answer += "."
         
         return Command(
             update={
@@ -947,9 +1009,12 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
         
     except Exception as e:
         logger.error(f"Error in analysis: {e}")
+        error_msg = (f"Encontré un error analizando tu campaña: {str(e)}. Por favor intenta de nuevo." 
+                    if state.get('language') == 'es' 
+                    else f"I encountered an error analyzing your campaign: {str(e)}. Please try again.")
         return Command(
             update={
-                "answer": f"I encountered an error analyzing your campaign: {str(e)}. Please try again.",
+                "answer": error_msg,
                 "stage": "complete"
             },
             goto="complete"
