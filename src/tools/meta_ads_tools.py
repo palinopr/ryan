@@ -400,6 +400,8 @@ class DynamicMetaSDK:
                 logger.error("No Meta access token configured")
                 return []
             
+            logger.info(f"Getting adsets insights for campaign {campaign_id}, date_preset: {date_preset}, fields: {fields}")
+            
             # Check campaign access permissions
             if not self.check_campaign_access(campaign_id):
                 logger.warning(f"Access denied: User {self.current_user_phone} tried to access campaign {campaign_id}")
@@ -409,6 +411,7 @@ class DynamicMetaSDK:
             
             # Get all adsets for this campaign
             adsets = campaign.get_ad_sets(fields=['id', 'name', 'status'])
+            logger.info(f"Found {len(list(adsets))} adsets for campaign {campaign_id}")
             
             # Default fields if none specified
             if not fields:
@@ -420,13 +423,19 @@ class DynamicMetaSDK:
             
             # Collect insights from all adsets
             all_insights = []
-            for adset in adsets:
+            adsets_list = list(campaign.get_ad_sets(fields=['id', 'name', 'status']))  # Re-fetch since we consumed iterator
+            logger.info(f"Processing {len(adsets_list)} adsets")
+            
+            for adset in adsets_list:
                 try:
                     adset_id = adset.get('id')
                     adset_name = adset.get('name', 'Unknown')
                     
                     if not adset_id:
+                        logger.warning(f"Skipping adset with no ID: {adset}")
                         continue
+                    
+                    logger.debug(f"Getting insights for adset {adset_id}: {adset_name}")
                     
                     # Create AdSet object properly
                     adset_obj = AdSet(adset_id)
@@ -437,8 +446,10 @@ class DynamicMetaSDK:
                     }
                     
                     insights = adset_obj.get_insights(fields=fields, params=params)
+                    insights_list = list(insights)
+                    logger.debug(f"Got {len(insights_list)} insights for adset {adset_name}")
                     
-                    for insight in insights:
+                    for insight in insights_list:
                         insight_data = insight.export_all_data()
                         # Add adset name (city name) if not present
                         if 'adset_name' not in insight_data:
@@ -448,13 +459,14 @@ class DynamicMetaSDK:
                         all_insights.append(insight_data)
                         
                 except Exception as e:
-                    logger.warning(f"Error getting insights for adset {adset.get('id', 'unknown')}: {e}")
+                    logger.warning(f"Error getting insights for adset {adset.get('id', 'unknown')}: {str(e)}")
                     continue
             
+            logger.info(f"Returning {len(all_insights)} total insights from adsets")
             return all_insights
             
         except Exception as e:
-            logger.error(f"Error getting adsets insights: {e}")
+            logger.error(f"Error getting adsets insights: {str(e)}", exc_info=True)
             return []
     
     def get_all_campaigns_insights(self, 
@@ -628,7 +640,7 @@ def meta_sdk_query(query: Dict[str, Any]) -> Any:
     Returns:
         The requested data from Meta Ads API
     """
-    logger.info(f"meta_sdk_query called with: {query}")
+    logger.info(f"meta_sdk_query called with: {json.dumps(query, indent=2)}")
     
     try:
         # Check if we're in an async context (LangGraph Studio)
@@ -638,17 +650,23 @@ def meta_sdk_query(query: Dict[str, Any]) -> Any:
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(meta_sdk.execute_query, query)
-                result = future.result(timeout=10)  # 10 second timeout
+                result = future.result(timeout=30)  # Increased timeout to 30 seconds
         else:
             # Normal sync execution
             result = meta_sdk.execute_query(query)
         
-        logger.info(f"meta_sdk_query result: {result}")
+        # Enhanced logging to understand the result
+        logger.info(f"meta_sdk_query result type: {type(result)}, length: {len(result) if isinstance(result, list) else 'N/A'}")
+        if isinstance(result, list) and len(result) > 0:
+            logger.info(f"First result item keys: {result[0].keys() if isinstance(result[0], dict) else 'N/A'}")
+        elif isinstance(result, dict):
+            logger.info(f"Result keys: {result.keys()}")
+        
         return result
         
     except Exception as e:
-        logger.error(f"Error in meta_sdk_query: {e}")
-        return {"error": str(e), "message": "Failed to fetch data from Meta API"}
+        logger.error(f"Error in meta_sdk_query: {str(e)}", exc_info=True)
+        return {"error": str(e), "message": "Failed to fetch data from Meta API", "error_type": type(e).__name__}
 
 
 @tool
