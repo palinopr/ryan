@@ -35,74 +35,65 @@ from ..tools.meta_ads_intelligence import (
 logger = logging.getLogger(__name__)
 
 
-def check_query_restrictions(question: str) -> Optional[str]:
+async def check_query_restrictions(question: str) -> Optional[str]:
     """
-    Check if a query is asking for restricted strategic information.
+    Use AI to understand if a query is asking for restricted strategic information.
     Returns an error message if restricted, None if allowed.
     
     Clients can ask about ANY metrics/insights but NOT about strategy/structure.
     """
-    question_lower = question.lower()
+    settings = get_settings()
     
-    # Restricted patterns - HOW/WHY/WHEN questions about strategy and operations
-    restricted_patterns = [
-        # How the campaign is made/structured
-        r'how .* (made|created|built|structured|organized|set up|setup)',
-        r'campaign structure',
-        r'account structure',
-        r'how many (campaign|campaigns)\b',  # Block campaign count, but allow ad/adset metrics
-        
-        # Strategy questions  
-        r'how .* (optimiz|target|bid|allocat|distribut)',
-        r'(optimization|bidding|targeting|audience) (strategy|method|approach|technique)',
-        r'why .* (target|chose|choose|select|pick)',
-        r'budget (strategy|allocation method)',
-        
-        # When/timing of operations
-        r'when .* (update|change|modify|adjust)',
-        r'(update|change) (schedule|timing|frequency)',
-        r'how often',
-        
-        # Creative content details
-        r'ad (copy|text|content)',
-        r'what .* (say|says|said) in',
-        r'(image|video|creative) content',
-        r'messaging (strategy|content)',
-        r'show .* creative',
-        
-        # Technical implementation
-        r'pixel (setup|configuration|implementation)',
-        r'tracking (setup|method|implementation)',
-        r'how .* (track|measure|implement)',
-        r'api (configuration|setup)',
-        r'webhook',
-        
-        # Modification attempts
-        r'\b(update|change|modify|edit|adjust|increase|decrease|pause|stop|start|activate|deactivate)\b',
-        r'(create|add|make) .* (campaign|ad|adset|audience)',
-        r'can (i|we|you) (change|update|modify)',
-        
-        # Strategic recommendations
-        r'(recommendation|suggest|advice|should|could|would) .* (do|try|test)',
-        r'best practice',
-        r'what should',
-        r'how to improve',
-        
-        # Competitor info
-        r'competitor',
-        r'benchmark against',
-        r'industry (average|standard)',
-        
-        # Internal operations
-        r'internal (process|procedure|method)',
-        r'proprietary',
-        r'secret',
-        r'algorithm'
-    ]
+    # Get AI model
+    model = None
+    if settings.openai.api_key:
+        model = ChatOpenAI(
+            model=settings.openai.model,
+            temperature=0.2,
+            api_key=settings.openai.api_key
+        )
+    elif settings.anthropic.api_key:
+        model = ChatAnthropic(
+            model=settings.anthropic.model,
+            temperature=0.2,
+            api_key=settings.anthropic.api_key
+        )
     
-    # Check each restricted pattern
-    for pattern in restricted_patterns:
-        if re.search(pattern, question_lower):
+    if not model:
+        # Fallback: allow all queries if no AI available
+        return None
+    
+    prompt = f"""
+    You are a security filter for a Meta Ads reporting system.
+    The client has READ-ONLY access to view metrics and performance data.
+    They should NOT have access to strategic information about HOW things are done.
+    
+    Analyze this question: {question}
+    
+    ALLOWED topics (return "allowed"):
+    - Performance metrics (CTR, CPC, spend, impressions, etc.)
+    - Campaign/adset/ad data and results
+    - Geographic performance
+    - Time-based reports
+    - Any questions about WHAT the results are
+    
+    RESTRICTED topics (return "restricted"):
+    - HOW campaigns are created/structured
+    - WHY certain strategies are used
+    - WHEN updates/changes are made
+    - Optimization methods or strategies
+    - Creative content details
+    - Ability to modify/change anything
+    - Internal processes or algorithms
+    
+    Return ONLY one word: "allowed" or "restricted"
+    """
+    
+    try:
+        response = await model.ainvoke([SystemMessage(content=prompt)])
+        decision = response.content.strip().lower()
+        
+        if "restricted" in decision:
             return (
                 "🔒 **RESTRICTED INFORMATION**\n\n"
                 "This information is proprietary to Outlet Media and cannot be shared.\n\n"
@@ -111,17 +102,12 @@ def check_query_restrictions(question: str) -> Optional[str]:
                 "• All available insights for any date range\n"
                 "• City/location performance data\n"
                 "• CTR, CPC, CPM, ROAS, impressions, clicks, spend, etc.\n\n"
-                "Restricted information includes:\n"
-                "• How campaigns are structured or created\n"
-                "• Optimization strategies and methods\n"
-                "• When/how we update budgets\n"
-                "• Creative content and messaging\n\n"
                 "For strategic questions, please contact your Outlet Media account manager."
             )
-    
-    # All metrics/insights questions are allowed by default
-    # No need to check for specific keywords - if it's not restricted, it's allowed
-    return None  # Query is allowed
+        return None
+    except:
+        # On error, be permissive
+        return None
 
 
 class MetaCampaignState(MessagesState):
@@ -239,7 +225,7 @@ async def plan_and_execute_dynamic_queries(question: str,
     and synthesize an answer. Returns None on failure (caller should fallback).
     """
     # Check for restricted queries FIRST
-    restriction_msg = check_query_restrictions(question)
+    restriction_msg = await check_query_restrictions(question)
     if restriction_msg:
         return restriction_msg
     
@@ -673,7 +659,7 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
     full_query = f"{question} {user_message}".strip()
     
     # Check for restricted queries FIRST
-    restriction_msg = check_query_restrictions(full_query)
+    restriction_msg = await check_query_restrictions(full_query)
     if restriction_msg:
         return Command(
             update={
@@ -747,28 +733,39 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
         # Fallback to basic detection if SDK discovery fails
         pass
     
-    # Location-specific questions (still useful for geographic queries)
-    locations = ['miami', 'new york', 'los angeles', 'chicago', 'houston', 'phoenix', 'philadelphia', 
-                 'san antonio', 'san diego', 'dallas', 'orlando', 'tampa', 'atlanta', 'boston']
-    for loc in locations:
-        if loc in full_query:
-            detected_entities['location'] = loc.title()
-            
-    # Time-specific patterns
-    if 'today' in full_query:
-        detected_entities['time'] = 'today'
-    elif 'yesterday' in full_query:
-        detected_entities['time'] = 'yesterday'
-    elif 'this week' in full_query:
-        detected_entities['time'] = 'last_7d'
-    elif 'last week' in full_query:
-        detected_entities['time'] = 'last_14d'
-    elif 'this month' in full_query:
-        detected_entities['time'] = 'this_month'
+    # Use AI to detect entities instead of hardcoded patterns
+    if model:
+        entity_prompt = f"""
+        Extract entities from this query: {full_query}
         
-    # Determine intent
-    is_comparison = any(word in full_query for word in ['which', 'best', 'worst', 'top', 'highest', 'lowest', 'compare'])
-    is_metric_question = detected_entities.get('metric') or any(word in full_query for word in ['ctr', 'clicks', 'impressions', 'spend', 'roas'])
+        Look for:
+        1. Location/City mentions (any city name, not from a fixed list)
+        2. Time references (today, yesterday, last week, this month, specific dates, etc.)
+        3. Metrics (CTR, clicks, impressions, ROAS, spend, etc.)
+        4. Comparison intent (best, worst, highest, lowest, compare, etc.)
+        
+        Return as JSON:
+        {{
+            "location": "detected city or null",
+            "time": "Meta API date_preset format (today, yesterday, last_7d, last_30d, etc.) or null",
+            "metric": "detected metric or null",
+            "comparison_type": "best/worst/compare or null"
+        }}
+        """
+        
+        try:
+            entity_response = await model.ainvoke([SystemMessage(content=entity_prompt)])
+            import json
+            json_match = re.search(r'\{.*\}', entity_response.content, re.DOTALL)
+            if json_match:
+                ai_entities = json.loads(json_match.group())
+                detected_entities.update(ai_entities)
+        except:
+            pass
+        
+    # Let AI determine intent instead of keyword matching
+    is_comparison = detected_entities.get('comparison_type') is not None
+    is_metric_question = detected_entities.get('metric') is not None
     
     logger.info(f"Question: {full_query}, Entities: {detected_entities}")
     
