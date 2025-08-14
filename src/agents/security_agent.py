@@ -131,10 +131,23 @@ class FailedAttemptTracker:
         """Clear failed attempts after successful auth"""
         if phone in self.attempts:
             del self.attempts[phone]
+    
+    def unlock_phone(self, phone: str):
+        """Manually unlock a phone number"""
+        if phone in self.lockouts:
+            del self.lockouts[phone]
+            logger.info(f"Phone {phone} manually unlocked")
+        if phone in self.attempts:
+            del self.attempts[phone]
+            logger.info(f"Cleared failed attempts for {phone}")
 
 
 # Global tracker instance
 attempt_tracker = FailedAttemptTracker()
+
+# Unlock admin phones on startup
+attempt_tracker.unlock_phone("+13054870475")  # Jaime Admin
+attempt_tracker.unlock_phone("+1(305) 487-0475")  # GoHighLevel format
 
 
 class AuditLogger:
