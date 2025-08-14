@@ -375,6 +375,39 @@ Return only JSON.
         
         # If it's city data, use the client-friendly formatter
         if is_city_data and items:
+            # Check if user asked about a specific city
+            specific_city = None
+            city_names = ['miami', 'brooklyn', 'chicago', 'houston', 'los angeles', 'la', 'new york', 'nyc']
+            question_lower = question.lower()
+            
+            for city in city_names:
+                if city in question_lower:
+                    # Map common names to actual adset names
+                    city_map = {
+                        'la': 'LA', 'los angeles': 'LA',
+                        'nyc': 'Brooklyn', 'new york': 'Brooklyn',
+                        'miami': 'Miami',
+                        'brooklyn': 'Brooklyn',
+                        'chicago': 'Chicago',
+                        'houston': 'Houston'
+                    }
+                    specific_city = city_map.get(city, city.title())
+                    break
+            
+            # If specific city requested, filter data
+            if specific_city:
+                filtered_items = []
+                for item in items:
+                    city_name = item.get('adset_name', '').replace('Sende Tour - ', '')
+                    if specific_city.lower() in city_name.lower():
+                        filtered_items.append(item)
+                
+                if filtered_items:
+                    return format_city_data_for_client(filtered_items, specific_city)
+                else:
+                    return f"No data available for {specific_city}."
+            
+            # Otherwise return all cities
             return format_city_data_for_client(items)
         
         # Otherwise, use the original aggregation logic
@@ -422,11 +455,48 @@ Return only JSON.
         return None
 
 
-def format_city_data_for_client(data: List[Dict]) -> str:
+def format_city_data_for_client(data: List[Dict], specific_city: str = None) -> str:
     """Format city/adset data in a client-friendly readable format"""
     if not data:
         return "No campaign data available for the selected period."
     
+    # If specific city requested, format differently
+    if specific_city and len(data) == 1:
+        city_data = data[0]
+        city_name = city_data.get('adset_name', '').replace('Sende Tour - ', '')
+        
+        formatted = f"📊 **{city_name.upper()} PERFORMANCE**\n\n"
+        
+        # Extract metrics
+        spend = float(city_data.get('spend', 0))
+        impressions = int(city_data.get('impressions', 0))
+        clicks = int(city_data.get('clicks', 0))
+        ctr = float(city_data.get('ctr', 0))
+        
+        # Calculate sales/revenue from actions
+        sales = 0
+        revenue = 0
+        for action in city_data.get('actions', []):
+            if 'purchase' in action.get('action_type', '').lower():
+                sales = int(action.get('value', 0))
+        for action in city_data.get('action_values', []):
+            if 'purchase' in action.get('action_type', '').lower():
+                revenue = float(action.get('value', 0))
+        
+        roas = (revenue / spend) if spend > 0 else 0
+        
+        formatted += f"• People Reached: {impressions:,}\n"
+        formatted += f"• Clicked to Learn More: {clicks} ({ctr:.1f}% interest rate)\n"
+        formatted += f"• Ad Spend: ${spend:.2f}\n"
+        if sales > 0:
+            formatted += f"• Tickets Sold: {sales}\n"
+            formatted += f"• Ticket Revenue: ${revenue:,.2f}\n"
+        if roas > 0:
+            formatted += f"• Return on Ad Spend: {roas:.1f}x\n"
+        
+        return formatted
+    
+    # Otherwise, show full report
     formatted = "📊 **TOUR CAMPAIGN - CITY PERFORMANCE REPORT**\n\n"
     
     # Calculate totals
