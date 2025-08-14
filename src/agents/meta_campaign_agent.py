@@ -425,30 +425,130 @@ Return only JSON.
         return None
 
 
-def format_city_data_for_client(data: List[Dict], question: str = None, language: str = "en") -> str:
-    """Format city/adset data based on the user's question context - dynamically discovers cities"""
+async def format_city_data_for_client(data: List[Dict], question: str = None, language: str = "en") -> str:
+    """AI-powered intelligent formatting - only shows what was asked for"""
     if not data:
         if language == "es":
             return "No hay datos de campaña disponibles para el período seleccionado."
         return "No campaign data available for the selected period."
     
-    # Intelligently determine what the user is asking for
-    question_lower = question.lower() if question else ""
+    # Use AI to determine what to show
+    settings = get_settings()
+    model = None
+    if settings.openai.api_key:
+        model = ChatOpenAI(
+            model=settings.openai.model,
+            temperature=0.3,
+            api_key=settings.openai.api_key
+        )
+    elif settings.anthropic.api_key:
+        model = ChatAnthropic(
+            model=settings.anthropic.model,
+            temperature=0.3,
+            api_key=settings.anthropic.api_key
+        )
     
-    # Dynamically discover what cities/locations are in the data
-    available_cities = {}
+    if not model:
+        # Fallback to basic format if no AI available
+        return format_city_data_basic(data, question, language)
+    
+    # Let AI analyze what metrics to show
+    question_lower = question.lower() if question else "sales"
+    
+    prompt = f"""
+    User asked: {question or 'How many sales do we have in each market?'}
+    
+    Analyze what specific metrics they want:
+    - If they ask about sales/tickets → show ONLY sales numbers and revenue
+    - If they ask about performance → show key metrics (spend, ROAS, impressions)
+    - If they ask "how is X doing" → show balanced overview
+    - If they ask for specific metric → show ONLY that metric
+    
+    Available data per city:
+    - Sales/purchases (tickets sold)
+    - Revenue (total sales value)
+    - Spend (advertising cost)
+    - ROAS (return on ad spend)
+    - Impressions (reach)
+    - Clicks
+    - CTR (click-through rate)
+    
+    Return JSON with metrics to show:
+    {{"show_metrics": ["sales", "revenue"], "format": "brief"}} 
+    """
+    
+    try:
+        if model:
+            response = await model.ainvoke([SystemMessage(content=prompt)])
+            import json, re
+            match = re.search(r'\{.*\}', response.content, re.DOTALL)
+            if match:
+                config = json.loads(match.group())
+                show_metrics = config.get('show_metrics', ['sales', 'revenue'])
+            else:
+                show_metrics = ['sales', 'revenue']
+        else:
+            show_metrics = ['sales', 'revenue']
+    except:
+        show_metrics = ['sales', 'revenue']
+    
+    # Process data for all cities
+    city_results = []
     for item in data:
-        adset_name = item.get('adset_name', '').replace('Sende Tour - ', '').replace('SENDE Tour - ', '')
-        if adset_name:
-            available_cities[adset_name.lower()] = adset_name
+        city_name = item.get('adset_name', '').replace('Sende Tour - ', '').replace('SENDE Tour - ', '')
+        
+        # Extract all metrics
+        metrics = {
+            'city': city_name,
+            'sales': 0,
+            'revenue': 0,
+            'spend': float(item.get('spend', 0)),
+            'roas': 0,
+            'impressions': int(item.get('impressions', 0)),
+            'clicks': int(item.get('clicks', 0)),
+            'ctr': float(item.get('ctr', 0))
+        }
+        
+        # Get sales and revenue
+        for action in item.get('actions', []):
+            if 'purchase' in action.get('action_type', '').lower():
+                metrics['sales'] = int(action.get('value', 0))
+        
+        for value in item.get('action_values', []):
+            if 'purchase' in value.get('action_type', '').lower():
+                metrics['revenue'] = float(value.get('value', 0))
+        
+        # Calculate ROAS
+        if metrics['spend'] > 0:
+            metrics['roas'] = metrics['revenue'] / metrics['spend']
+        
+        city_results.append(metrics)
     
-    # Check if user is asking about a specific city (without hardcoding)
-    city_mentioned = None
-    for city_key, city_name in available_cities.items():
-        # Check if the city name appears in the question
-        if city_key in question_lower:
-            city_mentioned = city_name
-            break
+    # Build intelligent response based on what was asked
+    response_parts = []
+    
+    # Sort cities by performance (sales or ROAS)
+    sort_key = 'sales' if 'sales' in show_metrics else 'roas'
+    city_results.sort(key=lambda x: x[sort_key], reverse=True)
+    
+    # Format based on requested metrics
+    if 'sales' in show_metrics and len(show_metrics) <= 2:
+        # Simple sales answer
+        if language == 'es':
+            response = "Ventas por ciudad:\n\n"
+            for city in city_results:
+                response += f"• {city['city']}: {city['sales']} boletos"
+                if 'revenue' in show_metrics:
+                    response += f" (${city['revenue']:,.2f})"
+                response += "\n"
+        else:
+            response = "Sales by market:\n\n"
+            for city in city_results:
+                response += f"• {city['city']}: {city['sales']} tickets"
+                if 'revenue' in show_metrics:
+                    response += f" (${city['revenue']:,.2f})"
+                response += "\n"
+        return response
     
     # If a specific city is mentioned and user is asking about it specifically
     # (not just mentioning it in passing)
@@ -901,10 +1001,8 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
             # Default: Quick overview of campaign performance
             logger.info("Providing quick campaign overview")
             
-            # Check if asking for maximum/all-time data
-            time_period = detected_entities.get('time') or 'today'
-            if any(word in full_query for word in ['maximum', 'max', 'all time', 'lifetime', 'total', 'overall']):
-                time_period = 'maximum'
+            # ALWAYS default to maximum (all-time) data unless specific time requested
+            time_period = detected_entities.get('time') or 'maximum'
             
             query = {
                 "operation": "get_adsets_insights",
