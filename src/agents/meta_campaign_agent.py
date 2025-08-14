@@ -378,7 +378,7 @@ Return only JSON.
         
         # If it's city data, use the client-friendly formatter
         if is_city_data and items:
-            return format_city_data_for_client(items, question)
+            return await format_city_data_for_client(items, question, language)
         
         # Otherwise, use the original aggregation logic
         def pick(v, k, default=0):
@@ -550,9 +550,12 @@ async def format_city_data_for_client(data: List[Dict], question: str = None, la
                 response += "\n"
         return response
     
-    # If a specific city is mentioned and user is asking about it specifically
-    # (not just mentioning it in passing)
-    if city_mentioned and not any(word in question_lower for word in ['all', 'cities', 'compare', 'versus', 'vs', 'other']):
+    # Remove old hardcoded city-specific logic - AI handles this now
+    # Just return the formatted response
+    return response  # Exit here with the intelligent response
+    
+    # OLD CODE BELOW - TO BE REMOVED
+    if False:  # Disable old hardcoded logic
         # Filter for that specific city
         city_data = None
         for item in data:
