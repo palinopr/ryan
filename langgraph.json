@@ -11,5 +11,6 @@
   "env": ".env",
   "python_version": "3.11",
   "pip_config_file": "./pyproject.toml",
-  "dockerfile_lines": []
+  "dockerfile_lines": [],
+  "api": "./api.py:app"
 }

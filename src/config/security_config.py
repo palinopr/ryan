@@ -17,6 +17,14 @@ SECURITY_CONFIG = {
             "allowed_campaigns": ["120232002620350525"],  # Ryan Castro's SENDÉ Tour campaign
             "campaign_access": "restricted"  # Can only see their campaigns
         },
+        "jaime_admin": {
+            "phone": os.getenv("ADMIN_PHONE_NUMBER", "+13054870475"),  # Jaime's admin phone
+            "name": "Jaime Admin",
+            "role": "admin",
+            "permissions": ["*"],  # All permissions
+            "allowed_campaigns": ["120232002620350525"],  # Access to SENDÉ Tour campaign
+            "campaign_access": "restricted"  # Can only see their campaigns
+        },
         "manager": {
             "phone": os.getenv("MANAGER_PHONE", "+17865555678"),  # Replace with actual
             "name": "Tour Manager",

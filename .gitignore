@@ -49,4 +49,4 @@ __pycache__/
 *.tmp
 *.bak
 *.backup
-*~
+*~deployment_env.txt
