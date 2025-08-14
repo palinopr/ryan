@@ -290,7 +290,7 @@ Rules:
 - Prefer operations that match user intent; use get_campaign_insights for high-level metrics and breakdowns; get_adsets_insights when asking per-adset/city; use custom_query when fetching object fields or non-insights edges.
 - If a campaign is implied but no ID provided, set needs_search=true and populate search with type="campaigns" and a term (e.g., "SENDÉ Tour").
 - Include fields needed to answer (e.g., impressions, clicks, spend, ctr, cpc, cpm, actions, action_values, purchase_roas). If asking about conversions/ROAS, include actions and action_values.
-- Always include a date_preset. If none given, use "{date_hint or 'last_7d'}".
+- Always include a date_preset. If none given, use "{date_hint or 'maximum'}" to get all-time data.
 - Never use "city" as a breakdown - cities are AdSet names in Meta Ads.
 
 User question: {question}
@@ -908,7 +908,7 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
             query = {
                 "operation": "get_adsets_insights",
                 "campaign_id": campaign_id,
-                "date_preset": detected_entities.get('time') or 'today',
+                "date_preset": detected_entities.get('time') or 'maximum',
                 "fields": [
                     'adset_name', 'impressions', 'clicks', 'spend', 'ctr', 'cpc', 'cpm',
                     'conversions', 'purchase_roas', 'actions', 'action_values'
@@ -1677,7 +1677,7 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
             query = {
                 "operation": "get_adsets_insights",
                 "campaign_id": campaign_id,
-                "date_preset": entities.get('time_period') or 'today',
+                "date_preset": entities.get('time_period') or 'maximum',
                 "fields": [
                     'adset_name', 'impressions', 'clicks', 'spend', 'ctr', 'cpc', 'cpm',
                     'conversions', 'purchase_roas', 'actions', 'action_values', 'inline_link_clicks'
