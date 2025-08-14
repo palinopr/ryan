@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configuration
-LANGGRAPH_URL = os.getenv("LANGGRAPH_URL", "http://localhost:2024")
-DEPLOYMENT_URL = os.getenv("DEPLOYMENT_URL", "https://meta-ryan-e63beed228015a5fbcf0b5408aa860fa.us.langgraph.app")
+DEPLOYMENT_URL = "https://meta-ryan-e63beed228015a5fbcf0b5408aa860fa.us.langgraph.app"
+API_KEY = "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"
 
 def format_phone_number(phone):
     """Format phone number to include country code"""
@@ -82,8 +82,8 @@ def handle_ghl_webhook():
         # Format phone number
         formatted_phone = format_phone_number(phone)
         
-        # Determine which URL to use (local or deployed)
-        base_url = DEPLOYMENT_URL if os.getenv("USE_DEPLOYMENT", "false").lower() == "true" else LANGGRAPH_URL
+        # Use deployment URL
+        base_url = DEPLOYMENT_URL
         
         # Create thread metadata
         thread_metadata = {
@@ -94,6 +94,12 @@ def handle_ghl_webhook():
             "source": "ghl_webhook"
         }
         
+        # Headers with API key
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": API_KEY
+        }
+        
         # Step 1: Search for existing thread
         logger.info(f"Searching for existing thread for contact {contact_id}")
         search_response = requests.post(
@@ -102,6 +108,7 @@ def handle_ghl_webhook():
                 "metadata": {"contact_id": contact_id},
                 "limit": 1
             },
+            headers=headers,
             timeout=30
         )
         
@@ -113,6 +120,7 @@ def handle_ghl_webhook():
             create_response = requests.post(
                 f"{base_url}/threads",
                 json={"metadata": thread_metadata},
+                headers=headers,
                 timeout=30
             )
             
@@ -151,6 +159,7 @@ def handle_ghl_webhook():
                     "configurable": thread_metadata
                 }
             },
+            headers=headers,
             timeout=60
         )
         
@@ -229,6 +238,5 @@ if __name__ == '__main__':
     port = int(os.getenv('WEBHOOK_PORT', 8080))
     logger.info(f"Starting GHL Webhook Handler on port {port}")
     logger.info(f"Webhook endpoint: http://localhost:{port}/ghl-webhook")
-    logger.info(f"LangGraph URL: {LANGGRAPH_URL}")
     logger.info(f"Deployment URL: {DEPLOYMENT_URL}")
     app.run(host='0.0.0.0', port=port, debug=False)

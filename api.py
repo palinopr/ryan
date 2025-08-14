@@ -110,7 +110,9 @@ async def handle_ghl_webhook(webhook_data: GHLWebhookData, request: Request):
                                 "role": "user",
                                 "content": webhook_data.message
                             }
-                        ]
+                        ],
+                        "phone_number": phone,
+                        "contact_id": webhook_data.id
                     },
                     "metadata": thread_metadata,
                     "config": {
