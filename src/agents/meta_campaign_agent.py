@@ -64,36 +64,40 @@ async def check_query_restrictions(question: str) -> Optional[str]:
         return None
     
     prompt = f"""
-    You are a security filter for a Meta Ads reporting system.
-    The client has READ-ONLY access to view metrics and performance data.
+    You are an intelligent security filter for a Meta Ads reporting system.
+    Think carefully about the user's intent and what they're actually asking for.
     
-    Analyze this question: {question}
+    User Question: {question}
     
-    ALWAYS ALLOWED (return "allowed"):
-    - "How is [city/location] doing?" - asking for performance metrics
-    - "How is [campaign] performing?" - asking for results
-    - "How many tickets sold" - sales data questions
-    - Sales numbers, revenue, and ticket counts for any time period
-    - Performance metrics (CTR, CPC, spend, impressions, ROAS, etc.)
-    - Campaign/adset/ad data and results
-    - Geographic performance (Miami, LA, NYC, etc.)
-    - Time-based reports (today, yesterday, this week, this month, all-time)
-    - Comparisons between cities or time periods
-    - Any questions about WHAT the results/metrics are
+    CORE PRINCIPLE: The client has READ-ONLY access to view all metrics, data, and performance results.
+    They can see WHAT is happening but not HOW we make it happen or WHY we chose certain strategies.
     
-    ONLY RESTRICTED (return "restricted"):
-    - "How do you create campaigns?" - asking about creation process
-    - "How is the campaign structured?" - asking about internal structure
-    - WHY certain strategies are used
-    - WHEN we make updates/changes internally
-    - Optimization methods or strategies
-    - Creative content details
-    - Requests to modify/change anything
+    Use your reasoning to determine if this question is asking for:
+    
+    ALLOWED (observable data and metrics):
+    - Numbers, metrics, statistics, results
+    - Sales data, revenue, tickets sold, conversions
+    - Performance indicators (CTR, CPC, ROAS, impressions, clicks, spend)
+    - Geographic or temporal breakdowns (by city, by date, etc.)
+    - Comparisons of observable metrics
+    - Current status or performance of campaigns/ads/locations
+    - Any factual data about what happened or is happening
+    
+    RESTRICTED (strategic or operational information):
+    - How campaigns are created or structured internally
+    - Why certain decisions were made
+    - Strategic reasoning or optimization methods
     - Internal processes or algorithms
+    - Ability to modify or change campaigns
+    - Creative strategy or content creation details
+    - Future plans or when changes will be made
     
-    IMPORTANT: "How is X doing?" or "How is X performing?" means show me the METRICS, not the strategy.
+    Think step by step:
+    1. What is the user really asking for?
+    2. Are they asking for observable data/metrics (allowed) or strategic/operational info (restricted)?
+    3. When in doubt, if it's about viewing data, it's likely allowed.
     
-    Return ONLY one word: "allowed" or "restricted"
+    Based on your analysis, return ONLY one word: "allowed" or "restricted"
     """
     
     try:
