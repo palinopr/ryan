@@ -48,6 +48,30 @@ SECURITY_CONFIG = {
             "permissions": ["*"],
             "allowed_campaigns": ["*"],  # Can see all campaigns
             "campaign_access": "all"
+        },
+        "team_member_1": {
+            "phone": os.getenv("TEAM_PHONE_1", "+17865554321"),  # Team member 1
+            "name": "Team Member 1",
+            "role": "manager",
+            "permissions": ["read", "write", "send"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
+        },
+        "team_member_2": {
+            "phone": os.getenv("TEAM_PHONE_2", "+13055554567"),  # Team member 2
+            "name": "Team Member 2",
+            "role": "manager",
+            "permissions": ["read", "write", "send"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
+        },
+        "viewer_1": {
+            "phone": os.getenv("VIEWER_PHONE_1", "+19545551234"),  # Read-only viewer
+            "name": "Viewer 1",
+            "role": "viewer",
+            "permissions": ["read"],
+            "allowed_campaigns": ["120232002620350525"],
+            "campaign_access": "restricted"
         }
     },
     
