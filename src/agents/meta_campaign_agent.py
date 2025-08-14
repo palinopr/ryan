@@ -276,7 +276,7 @@ Schema:
       "edge": "insights|ads|adsets|null",
       "fields": [string,...],
       "params": {{
-        "date_preset": "today|yesterday|last_7d|last_30d|this_month",
+        "date_preset": "maximum|today|yesterday|last_7d|last_30d|last_90d|this_month|lifetime",
         "breakdowns": [string,...],
         "level": "campaign|adset|ad|null",
         "time_increment": "1|7|null"
@@ -882,10 +882,11 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
         answer = ""
         
         # First try dynamic NL-to-SDK planning for arbitrary questions with language support
+        # IMPORTANT: Default to 'maximum' if no time specified
         dynamic_answer = await plan_and_execute_dynamic_queries(
             question=full_query or user_message,
             campaign_id=campaign_id,
-            date_hint=detected_entities.get('time'),
+            date_hint=detected_entities.get('time') or 'maximum',  # Always default to maximum
             language=state.get('language', 'en')
         )
         if dynamic_answer:
