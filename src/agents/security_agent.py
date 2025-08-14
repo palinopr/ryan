@@ -216,10 +216,17 @@ async def validate_phone_node(state: SecurityState) -> Command[Literal["check_pe
             goto="deny_access"
         )
     
+    # Normalize phone number format (remove spaces, parentheses, dashes)
+    import re
+    normalized_phone = re.sub(r'[\s\(\)\-]', '', phone)
+    if not normalized_phone.startswith('+'):
+        normalized_phone = '+' + normalized_phone
+    logger.info(f"Normalized phone from '{phone}' to '{normalized_phone}'")
+    
     # Check if phone is authorized
     authorized_numbers = get_authorized_numbers()
-    if phone not in authorized_numbers:
-        attempt_tracker.record_failed_attempt(phone, "unauthorized_number")
+    if normalized_phone not in authorized_numbers:
+        attempt_tracker.record_failed_attempt(normalized_phone, "unauthorized_number")
         audit_logger.log(AuditEntry(
             phone=phone,
             action="access_attempt",
@@ -235,11 +242,11 @@ async def validate_phone_node(state: SecurityState) -> Command[Literal["check_pe
         )
     
     # Phone is authorized
-    user_role = get_user_role(phone)
-    user_permissions = get_user_permissions(phone)
+    user_role = get_user_role(normalized_phone)
+    user_permissions = get_user_permissions(normalized_phone)
     
     # Clear failed attempts on successful auth
-    attempt_tracker.clear_attempts(phone)
+    attempt_tracker.clear_attempts(normalized_phone)
     
     logger.info(f"Phone {phone} authorized with role: {user_role}")
     
