@@ -66,25 +66,30 @@ async def check_query_restrictions(question: str) -> Optional[str]:
     prompt = f"""
     You are a security filter for a Meta Ads reporting system.
     The client has READ-ONLY access to view metrics and performance data.
-    They should NOT have access to strategic information about HOW things are done.
     
     Analyze this question: {question}
     
-    ALLOWED topics (return "allowed"):
-    - Performance metrics (CTR, CPC, spend, impressions, etc.)
+    ALWAYS ALLOWED (return "allowed"):
+    - "How is [city/location] doing?" - asking for performance metrics
+    - "How is [campaign] performing?" - asking for results
+    - Performance metrics (CTR, CPC, spend, impressions, ROAS, etc.)
     - Campaign/adset/ad data and results
-    - Geographic performance
-    - Time-based reports
-    - Any questions about WHAT the results are
+    - Geographic performance (Miami, LA, NYC, etc.)
+    - Time-based reports (today, yesterday, this week)
+    - Comparisons between cities or time periods
+    - Any questions about WHAT the results/metrics are
     
-    RESTRICTED topics (return "restricted"):
-    - HOW campaigns are created/structured
+    ONLY RESTRICTED (return "restricted"):
+    - "How do you create campaigns?" - asking about creation process
+    - "How is the campaign structured?" - asking about internal structure
     - WHY certain strategies are used
-    - WHEN updates/changes are made
+    - WHEN we make updates/changes internally
     - Optimization methods or strategies
     - Creative content details
-    - Ability to modify/change anything
+    - Requests to modify/change anything
     - Internal processes or algorithms
+    
+    IMPORTANT: "How is X doing?" or "How is X performing?" means show me the METRICS, not the strategy.
     
     Return ONLY one word: "allowed" or "restricted"
     """
