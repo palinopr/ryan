@@ -5,7 +5,7 @@ This module handles incoming webhooks from GoHighLevel and converts them
 to the LangGraph threads API format.
 """
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -31,7 +31,11 @@ class GHLWebhookData(BaseModel):
 
 
 @app.post("/ghl-webhook")
-async def handle_ghl_webhook(webhook_data: GHLWebhookData, request: Request):
+async def handle_ghl_webhook(
+    webhook_data: GHLWebhookData, 
+    request: Request,
+    x_webhook_secret: Optional[str] = Header(None)
+):
     """
     Handle incoming webhooks from GoHighLevel.
     
@@ -42,6 +46,12 @@ async def handle_ghl_webhook(webhook_data: GHLWebhookData, request: Request):
     4. Returns the response to GHL
     """
     try:
+        # Optional: Check webhook secret if configured
+        expected_secret = os.getenv("GHL_WEBHOOK_SECRET")
+        if expected_secret and x_webhook_secret != expected_secret:
+            logger.warning(f"Invalid webhook secret from {request.client.host}")
+            raise HTTPException(status_code=401, detail="Invalid webhook secret")
+        
         logger.info(f"Received GHL webhook: contact_id={webhook_data.id}, phone={webhook_data.phone}")
         logger.info(f"Message: {webhook_data.message}")
         
