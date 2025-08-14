@@ -277,9 +277,11 @@ class DynamicMetaSDK:
             campaign_id = query.get("campaign_id") or query.get("object_id")
             if not campaign_id:
                 return {"error": "No campaign_id provided for adsets insights"}
+            date_preset = query.get("date_preset", "maximum")  # Default to maximum instead of today
+            logger.info(f"get_adsets_insights called with date_preset: {date_preset}")
             return self.get_adsets_insights(
                 campaign_id,
-                query.get("date_preset", "today"),
+                date_preset,
                 query.get("fields"),
                 query.get("level", "adset")
             )
@@ -385,7 +387,7 @@ class DynamicMetaSDK:
     
     def get_adsets_insights(self, 
                            campaign_id: str,
-                           date_preset: str = "today",
+                           date_preset: str = "maximum",
                            fields: Optional[List[str]] = None,
                            level: str = "adset") -> List[Dict]:
         """

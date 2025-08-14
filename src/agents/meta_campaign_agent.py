@@ -290,7 +290,7 @@ Rules:
 - Prefer operations that match user intent; use get_campaign_insights for high-level metrics and breakdowns; get_adsets_insights when asking per-adset/city; use custom_query when fetching object fields or non-insights edges.
 - If a campaign is implied but no ID provided, set needs_search=true and populate search with type="campaigns" and a term (e.g., "SENDÉ Tour").
 - Include fields needed to answer (e.g., impressions, clicks, spend, ctr, cpc, cpm, actions, action_values, purchase_roas). If asking about conversions/ROAS, include actions and action_values.
-- Always include a date_preset. If none given, use "{date_hint or 'maximum'}" to get all-time data.
+- Always include a date_preset. If none given, use "maximum" to get all-time data. Current date_hint: "{date_hint}".
 - Never use "city" as a breakdown - cities are AdSet names in Meta Ads.
 
 User question: {question}
@@ -299,12 +299,14 @@ Return only JSON.
 """
 
     try:
+        logger.info(f"Planning query with date_hint: {date_hint}")
         resp = await model.ainvoke([SystemMessage(content=schema_prompt)])
         import re, json as _json
         m = re.search(r"\{[\s\S]*\}", resp.content)
         if not m:
             return None
         plan = _json.loads(m.group())
+        logger.info(f"Generated plan: {json.dumps(plan, indent=2)}")
     except Exception:
         return None
 
@@ -514,9 +516,15 @@ async def format_city_data_for_client(data: List[Dict], question: str = None, la
             if 'purchase' in action.get('action_type', '').lower():
                 metrics['sales'] = int(action.get('value', 0))
         
-        for value in item.get('action_values', []):
+        # Get revenue from action_values - take first valid purchase value
+        action_values = item.get('action_values', [])
+        for value in action_values:
             if 'purchase' in value.get('action_type', '').lower():
-                metrics['revenue'] = float(value.get('value', 0))
+                revenue_val = float(value.get('value', 0))
+                # Only update if we haven't found a revenue value yet or this is higher
+                if revenue_val > 0 and (metrics['revenue'] == 0 or revenue_val > metrics['revenue']):
+                    metrics['revenue'] = revenue_val
+                    break  # Use first valid purchase revenue value
         
         # Calculate ROAS
         if metrics['spend'] > 0:
