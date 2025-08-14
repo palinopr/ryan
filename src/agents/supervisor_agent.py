@@ -320,7 +320,7 @@ async def compile_response_node(state: SupervisorState) -> Command[Literal["ghl_
 
 
 async def ghl_send_message_node(state: SupervisorState) -> Command[Literal["final_response"]]:
-    """Send response back to Ryan via GHL SMS/WhatsApp using MCP tools"""
+    """Send response back via GHL SMS using direct API call"""
     logger.info("Sending response via GHL messaging")
     
     final_response = state.get('final_response', 'Request processed.')
@@ -338,106 +338,64 @@ async def ghl_send_message_node(state: SupervisorState) -> Command[Literal["fina
             goto="final_response"
         )
     
-    # Try multiple sending methods with proper error handling
+    # Use direct API call to GoHighLevel
+    import aiohttp
+    import os
+    
+    ghl_api_token = os.getenv('GHL_API_TOKEN')
+    if not ghl_api_token:
+        logger.error("GHL_API_TOKEN not found in environment")
+        return Command(
+            update={
+                "ghl_message_sent": False,
+                "error": "GHL API token not configured"
+            },
+            goto="final_response"
+        )
+    
+    # Try sending message via direct API
     max_retries = 3
     retry_count = 0
     last_error = None
     
     while retry_count < max_retries:
         try:
-            # Attempt to use actual MCP tool if available
-            # Dynamic import to handle runtime availability
-            try:
-                # Check if MCP tools are available at runtime
-                import sys
-                if 'mcp__gohighlevel__conversations_send_a_new_message' in dir(sys.modules[__name__]):
-                    # MCP tool is available - use it directly
-                    result = await mcp__gohighlevel__conversations_send_a_new_message(
-                        body_type="SMS",
-                        body_contactId=contact_id or "",
-                        body_message=final_response
-                    )
-                else:
-                    # MCP not available - return instruction for Claude to execute
-                    result = {
-                        "action": "EXECUTE_MCP_TOOL",
-                        "tool": "mcp__gohighlevel__conversations_send_a_new_message",
-                        "parameters": {
-                            "body_type": "SMS",
-                            "body_contactId": contact_id or "",
-                            "body_message": final_response
-                        },
-                        "instruction": "Send this message via GHL conversation API"
-                    }
-                    logger.info(f"MCP tool instruction prepared: {result['tool']}")
-            
-            except NameError:
-                # MCP tools not in namespace - prepare instruction
-                result = {
-                    "action": "EXECUTE_MCP_TOOL",
-                    "tool": "mcp__gohighlevel__conversations_send_a_new_message",
-                    "parameters": {
-                        "body_type": "SMS",
-                        "body_contactId": contact_id or "",
-                        "body_message": final_response
-                    },
-                    "instruction": "Send this message via GHL conversation API"
+            async with aiohttp.ClientSession() as session:
+                url = "https://services.leadconnectorhq.com/conversations/messages"
+                headers = {
+                    "Authorization": f"Bearer {ghl_api_token}",
+                    "Version": "2021-07-28",
+                    "Content-Type": "application/json"
                 }
-                logger.info("MCP tools not available - instruction prepared for runtime execution")
-            
-            # Check result
-            if result and not result.get('error'):
-                message_id = result.get('messageId') or result.get('action') or 'pending'
-                logger.info(f"Message successfully prepared/sent via GHL: {message_id}")
-                return Command(
-                    update={
-                        "ghl_message_sent": True,
-                        "ghl_message_id": message_id,
-                        "mcp_instruction": result if result.get('action') == 'EXECUTE_MCP_TOOL' else None
-                    },
-                    goto="final_response"
-                )
-            elif result and result.get('error'):
-                last_error = result.get('error')
-                logger.warning(f"GHL send attempt {retry_count + 1} failed: {last_error}")
-                retry_count += 1
-                if retry_count < max_retries:
-                    await asyncio.sleep(2 ** retry_count)  # Exponential backoff
-                continue
+                data = {
+                    "type": "SMS",
+                    "contactId": contact_id,
+                    "message": final_response
+                }
                 
-        except ImportError as e:
-            logger.warning(f"Import error (expected in dev): {e}")
-            # In development/testing, return instruction for MCP execution
-            return Command(
-                update={
-                    "ghl_message_sent": False,
-                    "ghl_message_id": "mcp_instruction",
-                    "mcp_instruction": {
-                        "action": "EXECUTE_MCP_TOOL",
-                        "tool": "mcp__gohighlevel__conversations_send_a_new_message",
-                        "parameters": {
-                            "body_type": "SMS",
-                            "body_contactId": contact_id or "",
-                            "body_message": final_response
-                        }
-                    }
-                },
-                goto="final_response"
-            )
-            
-        except asyncio.TimeoutError:
-            last_error = "Request timeout"
-            logger.warning(f"GHL send timeout on attempt {retry_count + 1}")
-            retry_count += 1
-            continue
-            
+                async with session.post(url, headers=headers, json=data) as response:
+                    if response.status == 200 or response.status == 201:
+                        result = await response.json()
+                        logger.info(f"GHL message sent successfully: {result.get('messageId')}")
+                        return Command(
+                            update={
+                                "ghl_message_sent": True,
+                                "ghl_message_id": result.get('messageId')
+                            },
+                            goto="final_response"
+                        )
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"GHL API error: {response.status} - {error_text}")
+                        last_error = f"API error: {response.status}"
+                        
         except Exception as e:
+            logger.error(f"Error sending GHL message: {e}")
             last_error = str(e)
-            logger.error(f"Unexpected error on attempt {retry_count + 1}: {e}")
-            retry_count += 1
-            if retry_count < max_retries:
-                await asyncio.sleep(2 ** retry_count)
-            continue
+        
+        retry_count += 1
+        if retry_count < max_retries:
+            await asyncio.sleep(2 ** retry_count)  # Exponential backoff
     
     # All retries exhausted
     logger.error(f"Failed to send GHL message after {max_retries} attempts. Last error: {last_error}")
