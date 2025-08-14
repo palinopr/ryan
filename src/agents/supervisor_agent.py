@@ -60,37 +60,51 @@ class IntentAnalyzer:
                 api_key=self.settings.anthropic.api_key
             )
     
-    async def analyze_intent(self, message: str) -> Dict[str, Any]:
-        """Analyze user message to determine which agent(s) to use"""
+    async def analyze_intent(self, message: str, conversation_history: List = None) -> Dict[str, Any]:
+        """Intelligently analyze user intent with conversation context"""
+        
+        # Build context awareness
+        context = ""
+        if conversation_history and len(conversation_history) > 1:
+            # Get last 2-3 messages for context
+            recent = conversation_history[-3:] if len(conversation_history) > 3 else conversation_history
+            for msg in recent[:-1]:  # Skip current message
+                if hasattr(msg, 'content'):
+                    content = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+                    context += f"Previous: {content}\n"
         
         prompt = f"""
-        Analyze this request from Ryan Castro about his SENDÉ Tour campaign:
-        Request: {message}
+        You are a smart assistant helping analyze tour campaign messages.
+        Be intelligent about understanding what users really want, not just keywords.
         
-        IMPORTANT: Ryan ONLY asks about his Meta/Facebook ad campaigns.
-        The GHL CRM is for BACKEND operations only (not user queries).
+        {f"Conversation context: {context}" if context else ""}
+        Current message: {message}
         
-        META AGENT handles ALL user queries about:
-           - Facebook/Instagram ad campaigns for SENDÉ Tour
-           - Campaign performance metrics
-           - ROAS (Return on Ad Spend)
-           - City performance (Brooklyn, Miami, Houston, Chicago, LA)
-           - Ad spend and budgets
-           - Impressions, clicks, CTR
-           - Video engagement metrics
-           - Any Facebook/Meta/Instagram related data
+        Understand the REAL intent:
+        - "como va miami" = user wants Miami's specific performance
+        - "how are all cities" = user wants overview of all cities  
+        - "whats my roas" = user wants ROAS metric
+        - Greetings should be recognized as greetings
+        - Follow-up questions should use context
         
-        Return JSON with:
+        Think about:
+        1. Are they asking about something specific or general?
+        2. Do they want a quick answer or detailed report?
+        3. Is this a greeting, question, or command?
+        
+        Return JSON:
         {{
-            "intent": "meta" (always for user queries),
-            "primary_agent": "meta",
-            "requires_data_from": ["meta"],
-            "reasoning": "why this routing",
+            "intent": "meta" (campaign data), "greeting", "question", or "unknown",
+            "primary_agent": "meta" or null,
+            "scope": "specific" (one thing) or "general" (overview),
+            "focus": what specifically (e.g. "miami", "roas", "all_cities"),
+            "detail_level": "brief" or "detailed",
+            "reasoning": "why interpreted this way",
             "extracted_entities": {{
-                "location": "if mentioned",
-                "metric": "if mentioned",
-                "contact": "if mentioned",
-                "action": "send/get/update/etc"
+                "location": specific city if mentioned,
+                "metric": specific metric if mentioned,
+                "time_period": if mentioned,
+                "comparison": true if comparing things
             }}
         }}
         """
@@ -127,9 +141,9 @@ async def analyze_intent_node(state: SupervisorState) -> Command[Literal["meta_a
         # Get the user's request
         user_message = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
         
-        # Analyze intent
+        # Analyze intent with conversation context
         analyzer = IntentAnalyzer()
-        intent_analysis = await analyzer.analyze_intent(user_message)
+        intent_analysis = await analyzer.analyze_intent(user_message, conversation_history=messages)
         
         intent = intent_analysis.get('intent')
         logger.info(f"Intent detected: {intent}")
