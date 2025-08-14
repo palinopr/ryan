@@ -367,8 +367,9 @@ async def ghl_send_message_node(state: SupervisorState) -> Command[Literal["fina
                     "Version": "2021-07-28",
                     "Content-Type": "application/json"
                 }
+                # Always use WhatsApp for replies since webhook comes from WhatsApp
                 data = {
-                    "type": "SMS",
+                    "type": "WhatsApp",  # WhatsApp for all replies
                     "contactId": contact_id,
                     "message": final_response
                 }
