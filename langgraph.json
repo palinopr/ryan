@@ -1,0 +1,15 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "supervisor": "./app.py:supervisor_graph",
+    "meta_agent": "./app.py:graph",
+    "ghl_agent": "./app.py:ghl_graph",
+    "security": "./app.py:security_graph"
+  },
+  "env": ".env",
+  "python_version": "3.11",
+  "pip_config_file": "./pyproject.toml",
+  "dockerfile_lines": []
+}
