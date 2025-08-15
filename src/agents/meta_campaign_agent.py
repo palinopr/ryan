@@ -178,10 +178,18 @@ async def parse_query_node(state: MetaCampaignState) -> Command:
         - "this month" → use "this_month"
         - Otherwise → use "maximum"
         
+        IMPORTANT for city queries:
+        - Cities are represented as adset names
+        - ALWAYS include "adset_name" in fields when user asks about cities
+        - Include all metrics fields for comparison
+        
         Examples:
         - "how many sales" → get_adsets_insights with actions field
         - "show me ad performance" → get_ads_insights
-        - "what cities are we targeting" → get_adsets_insights (adset names = cities)
+        - "what cities are we targeting" → get_adsets_insights with ["adset_name", "spend", "impressions", "clicks", "actions", "action_values"]
+        - "best performing city" → get_adsets_insights with ["adset_name", "spend", "impressions", "clicks", "actions", "action_values"]
+        - "which city has most sales" → get_adsets_insights with ["adset_name", "actions", "action_values", "spend"]
+        - "city performance" → get_adsets_insights with ["adset_name", "spend", "impressions", "clicks", "actions", "action_values"]
         - "show me the creatives" → get_ad_creatives
         - "who are we targeting" → get_targeting_info
         
@@ -314,53 +322,144 @@ async def format_response_node(state: MetaCampaignState) -> Command:
             )
         
         if model:
-            # First, let's aggregate the data ourselves for accuracy
-            total_purchases = 0
-            total_revenue = 0
-            total_spend = 0
-            total_impressions = 0
-            total_clicks = 0
+            # Check if user is asking about city performance
+            query_lower = query.lower()
+            is_city_query = any(word in query_lower for word in ['city', 'cities', 'location', 'best performing', 'worst performing', 'top'])
             
-            for item in data:
-                # Extract spend, impressions, clicks
-                total_spend += float(item.get('spend', 0))
-                total_impressions += int(float(item.get('impressions', 0)))
-                total_clicks += int(float(item.get('clicks', 0)))
+            if is_city_query and 'adset_name' in str(data):
+                # Process city-level data (adsets represent cities)
+                city_metrics = {}
                 
-                # Extract purchases from actions
-                if 'actions' in item and isinstance(item['actions'], list):
-                    for action in item['actions']:
-                        if action.get('action_type') == 'purchase':
-                            total_purchases += int(float(action.get('value', 0)))
+                for item in data:
+                    city_name = item.get('adset_name', 'Unknown')
+                    if city_name not in city_metrics:
+                        city_metrics[city_name] = {
+                            'spend': 0,
+                            'impressions': 0,
+                            'clicks': 0,
+                            'purchases': 0,
+                            'revenue': 0
+                        }
+                    
+                    # Aggregate metrics for each city
+                    city_metrics[city_name]['spend'] += float(item.get('spend', 0))
+                    city_metrics[city_name]['impressions'] += int(float(item.get('impressions', 0)))
+                    city_metrics[city_name]['clicks'] += int(float(item.get('clicks', 0)))
+                    
+                    # Extract purchases from actions
+                    if 'actions' in item and isinstance(item['actions'], list):
+                        for action in item['actions']:
+                            if action.get('action_type') == 'purchase':
+                                city_metrics[city_name]['purchases'] += int(float(action.get('value', 0)))
+                    
+                    # Extract revenue from action_values
+                    if 'action_values' in item and isinstance(item['action_values'], list):
+                        for av in item['action_values']:
+                            if av.get('action_type') == 'purchase':
+                                city_metrics[city_name]['revenue'] += float(av.get('value', 0))
                 
-                # Extract revenue from action_values
-                if 'action_values' in item and isinstance(item['action_values'], list):
-                    for av in item['action_values']:
-                        if av.get('action_type') == 'purchase':
-                            total_revenue += float(av.get('value', 0))
-            
-            # Now ask AI to format a nice response with the aggregated data
-            format_prompt = f"""
-            User asked: {query}
-            Time period: {time_period}
-            
-            Aggregated data:
-            - Total purchases/sales: {total_purchases}
-            - Total revenue: ${total_revenue:.2f}
-            - Total spend: ${total_spend:.2f}
-            - Total impressions: {total_impressions:,}
-            - Total clicks: {total_clicks:,}
-            - CTR: {(total_clicks/total_impressions*100) if total_impressions > 0 else 0:.2f}%
-            - ROAS: {(total_revenue/total_spend) if total_spend > 0 else 0:.2f}x
-            
-            Based on what the user asked, provide a direct answer.
-            If they asked "how many sales today" and it's 0, say "0 sales today"
-            If they asked "how many sales today" and it's 5, say "5 sales today"
-            Be concise and direct.
-            """
-            
-            response_ai = await model.ainvoke([SystemMessage(content=format_prompt)])
-            response = response_ai.content
+                # Calculate ROAS for each city
+                for city in city_metrics:
+                    spend = city_metrics[city]['spend']
+                    revenue = city_metrics[city]['revenue']
+                    city_metrics[city]['roas'] = (revenue / spend) if spend > 0 else 0
+                
+                # Find best performing city
+                best_city = None
+                best_metric = 0
+                metric_name = 'sales'
+                
+                if 'revenue' in query_lower or 'roas' in query_lower:
+                    # Sort by ROAS or revenue
+                    for city, metrics in city_metrics.items():
+                        if 'roas' in query_lower:
+                            if metrics['roas'] > best_metric:
+                                best_metric = metrics['roas']
+                                best_city = city
+                                metric_name = 'ROAS'
+                        else:
+                            if metrics['revenue'] > best_metric:
+                                best_metric = metrics['revenue']
+                                best_city = city
+                                metric_name = 'revenue'
+                else:
+                    # Default to sales/purchases
+                    for city, metrics in city_metrics.items():
+                        if metrics['purchases'] > best_metric:
+                            best_metric = metrics['purchases']
+                            best_city = city
+                            metric_name = 'sales'
+                
+                # Format response for city queries
+                if 'best' in query_lower or 'top' in query_lower:
+                    if best_city:
+                        metrics = city_metrics[best_city]
+                        response = f"**{best_city} is the best performing city**\n"
+                        response += f"- Sales: {metrics['purchases']}\n"
+                        response += f"- Revenue: ${metrics['revenue']:,.2f}\n"
+                        response += f"- Spend: ${metrics['spend']:,.2f}\n"
+                        response += f"- ROAS: {metrics['roas']:.2f}x\n"
+                        response += f"- Clicks: {metrics['clicks']:,}\n"
+                        response += f"- Impressions: {metrics['impressions']:,}"
+                    else:
+                        response = "No city performance data available."
+                else:
+                    # Show all cities
+                    response = "**City Performance:**\n\n"
+                    sorted_cities = sorted(city_metrics.items(), key=lambda x: x[1]['purchases'], reverse=True)
+                    for city, metrics in sorted_cities:
+                        response += f"**{city}:**\n"
+                        response += f"- Sales: {metrics['purchases']}\n"
+                        response += f"- Revenue: ${metrics['revenue']:,.2f}\n"
+                        response += f"- ROAS: {metrics['roas']:.2f}x\n\n"
+            else:
+                # Original aggregation for non-city queries
+                total_purchases = 0
+                total_revenue = 0
+                total_spend = 0
+                total_impressions = 0
+                total_clicks = 0
+                
+                for item in data:
+                    # Extract spend, impressions, clicks
+                    total_spend += float(item.get('spend', 0))
+                    total_impressions += int(float(item.get('impressions', 0)))
+                    total_clicks += int(float(item.get('clicks', 0)))
+                    
+                    # Extract purchases from actions
+                    if 'actions' in item and isinstance(item['actions'], list):
+                        for action in item['actions']:
+                            if action.get('action_type') == 'purchase':
+                                total_purchases += int(float(action.get('value', 0)))
+                    
+                    # Extract revenue from action_values
+                    if 'action_values' in item and isinstance(item['action_values'], list):
+                        for av in item['action_values']:
+                            if av.get('action_type') == 'purchase':
+                                total_revenue += float(av.get('value', 0))
+                
+                # Now ask AI to format a nice response with the aggregated data
+                format_prompt = f"""
+                User asked: {query}
+                Time period: {time_period}
+                
+                Aggregated data:
+                - Total purchases/sales: {total_purchases}
+                - Total revenue: ${total_revenue:.2f}
+                - Total spend: ${total_spend:.2f}
+                - Total impressions: {total_impressions:,}
+                - Total clicks: {total_clicks:,}
+                - CTR: {(total_clicks/total_impressions*100) if total_impressions > 0 else 0:.2f}%
+                - ROAS: {(total_revenue/total_spend) if total_spend > 0 else 0:.2f}x
+                
+                Based on what the user asked, provide a direct answer.
+                If they asked "how many sales today" and it's 0, say "0 sales today"
+                If they asked "how many sales today" and it's 5, say "5 sales today"
+                Be concise and direct.
+                """
+                
+                response_ai = await model.ainvoke([SystemMessage(content=format_prompt)])
+                response = response_ai.content
         else:
             # Fallback to basic aggregation
             metrics = {}
