@@ -234,12 +234,21 @@ async def route_to_meta_node(state: SupervisorState) -> Command[Literal["supervi
         # Run Meta agent
         result = await meta_graph.ainvoke(meta_state)
         
-        # Extract response
-        meta_response = {
-            "data": result.get('answer') or result.get('report_summary'),
-            "metrics": result.get('performance_data'),
-            "insights": result.get('insights')
-        }
+        # INTELLIGENT ERROR HANDLING: Check for errors first
+        if result.get('error'):
+            # If the meta agent returned an error (like proprietary info block), use that
+            meta_response = {
+                "data": result.get('error'),  # Use error message as data
+                "metrics": None,
+                "insights": None
+            }
+        else:
+            # Normal response processing
+            meta_response = {
+                "data": result.get('answer') or result.get('report_summary'),
+                "metrics": result.get('performance_data'),
+                "insights": result.get('insights')
+            }
         
         return Command(
             update={"meta_response": meta_response},
@@ -314,10 +323,20 @@ async def route_to_both_node(state: SupervisorState) -> Command[Literal["supervi
     try:
         # Run both agents (could be parallel in production)
         meta_result = await meta_graph.ainvoke(meta_state)
-        meta_response = {
-            "data": meta_result.get('answer') or meta_result.get('report_summary'),
-            "metrics": meta_result.get('performance_data')
-        }
+        
+        # INTELLIGENT ERROR HANDLING: Check for errors first
+        if meta_result.get('error'):
+            # If the meta agent returned an error (like proprietary info block), use that
+            meta_response = {
+                "data": meta_result.get('error'),  # Use error message as data
+                "metrics": None
+            }
+        else:
+            # Normal response processing
+            meta_response = {
+                "data": meta_result.get('answer') or meta_result.get('report_summary'),
+                "metrics": meta_result.get('performance_data')
+            }
     except Exception as e:
         logger.error(f"Meta agent error: {e}")
         meta_response = {"error": str(e)}

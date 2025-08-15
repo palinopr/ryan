@@ -1,6 +1,6 @@
 {
-  "trace_id": "1f079e2a-6432-6bb6-84da-cbfbd84afcc8",
-  "timestamp": "2025-08-15 14:18:00.767770",
+  "trace_id": "1f079e45-959c-6ff2-910c-10582543fb3d",
+  "timestamp": "2025-08-15 14:30:10.773301",
   "status": "success",
   "inputs": {
     "messages": [
@@ -19,7 +19,7 @@
         "additional_kwargs": {},
         "response_metadata": {},
         "type": "human",
-        "id": "0b29c162-73e2-43bc-882f-9a7dedae6877",
+        "id": "2e10b074-a1c4-4a0b-aab9-103267bd8fdc",
         "example": false
       },
       {
@@ -27,7 +27,7 @@
         "additional_kwargs": {},
         "response_metadata": {},
         "type": "human",
-        "id": "ef22bb7a-3c9d-4f25-98e3-5aabb13f34a6",
+        "id": "b60b2bda-0043-4027-8028-5ced4a08b2a8",
         "example": false
       },
       {
@@ -35,7 +35,7 @@
         "additional_kwargs": {},
         "response_metadata": {},
         "type": "ai",
-        "id": "7d75a128-11c0-4808-92f5-6424082b0c8a",
+        "id": "1d62b8c7-3032-40d7-9e87-45165f69c64b",
         "example": false,
         "tool_calls": [],
         "invalid_tool_calls": []
@@ -53,7 +53,7 @@
       "admin"
     ],
     "ghl_message_sent": true,
-    "ghl_message_id": "1UGB9ng6Ep5A6LexKw1c",
+    "ghl_message_id": "8KTjQt8Rrjr9ta7oDbR5",
     "current_request": "what interest are you using?",
     "intent": "meta",
     "language": "en",
