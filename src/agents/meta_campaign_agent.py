@@ -439,7 +439,40 @@ Be intelligent about understanding intent:
                     city_metrics = {}
                     
                     for item in data:
-                        city_name = item.get('adset_name', 'Unknown')
+                        raw_adset_name = item.get('adset_name', 'Unknown')
+                        
+                        # INTELLIGENT CITY NAME EXTRACTION
+                        # Remove common prefixes like "Sende Tour - ", "Tour - ", etc.
+                        city_name = raw_adset_name
+                        
+                        # List of known city names for intelligent extraction
+                        known_cities = ['Brooklyn', 'LA', 'Los Angeles', 'Miami', 'Chicago', 
+                                       'Houston', 'Dallas', 'New York', 'Atlanta', 'Orlando',
+                                       'Phoenix', 'San Diego', 'San Francisco', 'Boston',
+                                       'Seattle', 'Denver', 'Austin', 'Nashville', 'Portland']
+                        
+                        # Smart extraction: Look for known city names in the string
+                        import re
+                        city_found = False
+                        for known_city in known_cities:
+                            # Use word boundary matching to avoid partial matches
+                            pattern = r'\b' + re.escape(known_city) + r'\b'
+                            if re.search(pattern, city_name, re.IGNORECASE):
+                                city_name = known_city
+                                city_found = True
+                                break
+                        
+                        # If no known city found, use dash extraction as fallback
+                        if not city_found:
+                            if ' - ' in city_name:
+                                # Split by ' - ' and take the last part
+                                city_name = city_name.split(' - ')[-1].strip()
+                            elif ':' in city_name:
+                                # Also handle colon separators
+                                city_name = city_name.split(':')[-1].strip()
+                            
+                            # Clean up any remaining tour/campaign references
+                            city_name = city_name.replace('Tour', '').strip()
                         if city_name not in city_metrics:
                             city_metrics[city_name] = {
                                 'spend': 0,
@@ -502,7 +535,7 @@ Be intelligent about understanding intent:
                     if 'best' in query_lower or 'top' in query_lower:
                         if best_city:
                             metrics = city_metrics[best_city]
-                            response = f"**{best_city} is the best performing city**\n"
+                            response = f"{best_city} is the best performing city\n"
                             response += f"- Sales: {metrics['purchases']}\n"
                             response += f"- Revenue: ${metrics['revenue']:,.2f}\n"
                             response += f"- Spend: ${metrics['spend']:,.2f}\n"
@@ -513,10 +546,10 @@ Be intelligent about understanding intent:
                             response = "No city performance data available."
                     else:
                         # Show all cities
-                        response = "**City Performance:**\n\n"
+                        response = "City Performance:\n\n"
                         sorted_cities = sorted(city_metrics.items(), key=lambda x: x[1]['purchases'], reverse=True)
                         for city, metrics in sorted_cities:
-                            response += f"**{city}:**\n"
+                            response += f"{city}:\n"
                             response += f"- Sales: {metrics['purchases']}\n"
                             response += f"- Revenue: ${metrics['revenue']:,.2f}\n"
                             response += f"- ROAS: {metrics['roas']:.2f}x\n\n"
@@ -600,19 +633,19 @@ Be intelligent about understanding intent:
             # Format based on query keywords
             if 'sales' in query.lower() or 'purchases' in query.lower():
                 sales = int(metrics.get('action_purchase', 0))
-                response = f"**{sales} sales {time_period}**"
+                response = f"{sales} sales {time_period}"
             elif 'revenue' in query.lower():
                 revenue = metrics.get('revenue_purchase', 0)
-                response = f"**${revenue:,.2f} revenue {time_period}**"
+                response = f"${revenue:,.2f} revenue {time_period}"
             elif 'spend' in query.lower() or 'cost' in query.lower():
                 spend = metrics.get('spend', 0)
-                response = f"**${spend:,.2f} spent {time_period}**"
+                response = f"${spend:,.2f} spent {time_period}"
             elif 'impressions' in query.lower():
                 impressions = int(metrics.get('impressions', 0))
-                response = f"**{impressions:,} impressions {time_period}**"
+                response = f"{impressions:,} impressions {time_period}"
             else:
                 # Generic response with key metrics
-                response = f"**Metrics for {time_period}:**\n"
+                response = f"Metrics for {time_period}:\n"
                 for key, value in sorted(metrics.items())[:10]:
                     if isinstance(value, float) and value > 0:
                         response += f"- {key}: {value:,.2f}\n"
