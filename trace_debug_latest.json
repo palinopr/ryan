@@ -1,0 +1,61 @@
+{
+  "trace_id": "1f079948-0620-62b7-8194-71b5123682ff",
+  "timestamp": "2025-08-15 04:58:36.469950",
+  "status": "success",
+  "inputs": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Best city today"
+      }
+    ],
+    "contact_id": "c2FtYUL7h7rsv37qUJzU",
+    "phone_number": "+1(305) 487-0475"
+  },
+  "outputs": {
+    "messages": [
+      {
+        "content": "Best city today",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "human",
+        "id": "2a210e41-7993-459c-bf75-14b29e8426e0",
+        "example": false
+      },
+      {
+        "content": "No city performance data available.",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "ai",
+        "id": "2023ff82-a4ac-4b15-8b96-a26acb253531",
+        "example": false,
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    ],
+    "phone_number": "+13054870475",
+    "contact_id": "c2FtYUL7h7rsv37qUJzU",
+    "user_role": "admin",
+    "user_permissions": [
+      "read",
+      "write",
+      "send",
+      "update",
+      "delete",
+      "admin"
+    ],
+    "ghl_message_sent": true,
+    "ghl_message_id": "UZyNQPhnykJkJiuzAdef",
+    "current_request": "Best city today",
+    "intent": "meta",
+    "language": "en",
+    "meta_response": {
+      "data": "No city performance data available.",
+      "metrics": null,
+      "insights": null
+    },
+    "final_response": "No city performance data available.",
+    "is_authorized": true
+  },
+  "error": null
+}

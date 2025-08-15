@@ -12,11 +12,73 @@ from langgraph.types import Command
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+from pydantic import BaseModel, Field
 
 from ..config.settings import get_settings
 from ..tools.meta_ads_tools import meta_sdk_query, meta_sdk_discover, intelligent_meta_query
 
 logger = logging.getLogger(__name__)
+
+
+# ===== INTELLIGENT REASONING SCHEMAS =====
+class QueryUnderstanding(BaseModel):
+    """Schema for intelligent query understanding and reasoning"""
+    
+    user_intent: str = Field(
+        description="What does the user really want to know? Think semantically, not keywords."
+    )
+    
+    is_location_based: bool = Field(
+        description="Is the user asking about geographic/location performance? (cities, regions, etc.)"
+    )
+    
+    is_performance_query: bool = Field(
+        description="Is the user asking about performance metrics? (best, worst, top, etc.)"
+    )
+    
+    time_context: Optional[str] = Field(
+        description="What time period is relevant? (today, yesterday, last_7d, this_month, all_time, etc.)"
+    )
+    
+    metrics_focus: List[str] = Field(
+        description="Which metrics are important? (sales, revenue, ROAS, clicks, impressions, etc.)"
+    )
+    
+    comparison_type: Optional[str] = Field(
+        description="What type of comparison? (ranking, best, worst, trend, etc.)"
+    )
+    
+    requires_city_data: bool = Field(
+        description="Should we aggregate data by city/location from adset names?"
+    )
+    
+    reasoning: str = Field(
+        description="Explain your reasoning for the above decisions"
+    )
+
+
+class DataAnalysisDecision(BaseModel):
+    """Schema for deciding how to analyze the data"""
+    
+    aggregation_level: str = Field(
+        description="How to aggregate data: 'city' (from adset names), 'campaign', 'adset', or 'total'"
+    )
+    
+    primary_metric: str = Field(
+        description="Primary metric to focus on: 'sales', 'revenue', 'roas', 'clicks', etc."
+    )
+    
+    analysis_approach: str = Field(
+        description="How to analyze: 'ranking', 'comparison', 'total', 'trend', etc."
+    )
+    
+    data_fields_needed: List[str] = Field(
+        description="Which data fields are required from the API"
+    )
+    
+    reasoning: str = Field(
+        description="Explain why this analysis approach makes sense"
+    )
 
 
 class MetaCampaignState(MessagesState):
@@ -322,97 +384,134 @@ async def format_response_node(state: MetaCampaignState) -> Command:
             )
         
         if model:
-            # Check if user is asking about city performance
-            query_lower = query.lower()
-            is_city_query = any(word in query_lower for word in ['city', 'cities', 'location', 'best performing', 'worst performing', 'top'])
+            # ===== INTELLIGENT QUERY UNDERSTANDING =====
+            # Use structured output to understand what the user really wants
+            structured_model = model.with_structured_output(QueryUnderstanding)
             
-            if is_city_query and 'adset_name' in str(data):
-                # Process city-level data (adsets represent cities)
-                city_metrics = {}
+            understanding_prompt = f"""
+Analyze this user query about Meta/Facebook ad performance:
+
+Query: "{query}"
+
+Think about what the user really wants to know. Consider:
+1. Are they asking about location/geographic performance? 
+2. Are they comparing performance metrics?
+3. What time period matters?
+4. What metrics are they interested in?
+
+Important context:
+- In our system, adset names contain city names (e.g., "Sende Tour - Brooklyn")
+- When users ask about "best" or "top" without specifying what, they usually mean location/city performance
+- Consider semantic meaning, not just keywords
+
+Be intelligent about understanding intent:
+- "Best city today" → User wants to know which city/location is performing best
+- "How many sales" → User wants sales metrics
+- "Best" alone often implies location comparison
+"""
+            
+            try:
+                understanding = structured_model.invoke([
+                    HumanMessage(content=understanding_prompt)
+                ])
                 
-                for item in data:
-                    city_name = item.get('adset_name', 'Unknown')
-                    if city_name not in city_metrics:
-                        city_metrics[city_name] = {
-                            'spend': 0,
-                            'impressions': 0,
-                            'clicks': 0,
-                            'purchases': 0,
-                            'revenue': 0
-                        }
+                logger.info(f"Query Understanding: {understanding.dict()}")
+                
+                # Use AI decision for data analysis
+                if understanding.requires_city_data and 'adset_name' in str(data):
+                    # Process city-level data (adsets represent cities)
+                    city_metrics = {}
                     
-                    # Aggregate metrics for each city
-                    city_metrics[city_name]['spend'] += float(item.get('spend', 0))
-                    city_metrics[city_name]['impressions'] += int(float(item.get('impressions', 0)))
-                    city_metrics[city_name]['clicks'] += int(float(item.get('clicks', 0)))
+                    for item in data:
+                        city_name = item.get('adset_name', 'Unknown')
+                        if city_name not in city_metrics:
+                            city_metrics[city_name] = {
+                                'spend': 0,
+                                'impressions': 0,
+                                'clicks': 0,
+                                'purchases': 0,
+                                'revenue': 0
+                            }
                     
-                    # Extract purchases from actions
-                    if 'actions' in item and isinstance(item['actions'], list):
-                        for action in item['actions']:
-                            if action.get('action_type') == 'purchase':
-                                city_metrics[city_name]['purchases'] += int(float(action.get('value', 0)))
+                        # Aggregate metrics for each city
+                        city_metrics[city_name]['spend'] += float(item.get('spend', 0))
+                        city_metrics[city_name]['impressions'] += int(float(item.get('impressions', 0)))
+                        city_metrics[city_name]['clicks'] += int(float(item.get('clicks', 0)))
                     
-                    # Extract revenue from action_values
-                    if 'action_values' in item and isinstance(item['action_values'], list):
-                        for av in item['action_values']:
-                            if av.get('action_type') == 'purchase':
-                                city_metrics[city_name]['revenue'] += float(av.get('value', 0))
+                        # Extract purchases from actions
+                        if 'actions' in item and isinstance(item['actions'], list):
+                            for action in item['actions']:
+                                if action.get('action_type') == 'purchase':
+                                    city_metrics[city_name]['purchases'] += int(float(action.get('value', 0)))
+                    
+                        # Extract revenue from action_values
+                        if 'action_values' in item and isinstance(item['action_values'], list):
+                            for av in item['action_values']:
+                                if av.get('action_type') == 'purchase':
+                                    city_metrics[city_name]['revenue'] += float(av.get('value', 0))
                 
-                # Calculate ROAS for each city
-                for city in city_metrics:
-                    spend = city_metrics[city]['spend']
-                    revenue = city_metrics[city]['revenue']
-                    city_metrics[city]['roas'] = (revenue / spend) if spend > 0 else 0
+                    # Calculate ROAS for each city
+                    for city in city_metrics:
+                        spend = city_metrics[city]['spend']
+                        revenue = city_metrics[city]['revenue']
+                        city_metrics[city]['roas'] = (revenue / spend) if spend > 0 else 0
                 
-                # Find best performing city
-                best_city = None
-                best_metric = 0
-                metric_name = 'sales'
+                    # Find best performing city
+                    best_city = None
+                    best_metric = 0
+                    metric_name = 'sales'
                 
-                if 'revenue' in query_lower or 'roas' in query_lower:
-                    # Sort by ROAS or revenue
-                    for city, metrics in city_metrics.items():
-                        if 'roas' in query_lower:
-                            if metrics['roas'] > best_metric:
-                                best_metric = metrics['roas']
-                                best_city = city
-                                metric_name = 'ROAS'
-                        else:
-                            if metrics['revenue'] > best_metric:
-                                best_metric = metrics['revenue']
-                                best_city = city
-                                metric_name = 'revenue'
-                else:
-                    # Default to sales/purchases
-                    for city, metrics in city_metrics.items():
-                        if metrics['purchases'] > best_metric:
-                            best_metric = metrics['purchases']
-                            best_city = city
-                            metric_name = 'sales'
-                
-                # Format response for city queries
-                if 'best' in query_lower or 'top' in query_lower:
-                    if best_city:
-                        metrics = city_metrics[best_city]
-                        response = f"**{best_city} is the best performing city**\n"
-                        response += f"- Sales: {metrics['purchases']}\n"
-                        response += f"- Revenue: ${metrics['revenue']:,.2f}\n"
-                        response += f"- Spend: ${metrics['spend']:,.2f}\n"
-                        response += f"- ROAS: {metrics['roas']:.2f}x\n"
-                        response += f"- Clicks: {metrics['clicks']:,}\n"
-                        response += f"- Impressions: {metrics['impressions']:,}"
+                    if 'revenue' in query_lower or 'roas' in query_lower:
+                        # Sort by ROAS or revenue
+                        for city, metrics in city_metrics.items():
+                            if 'roas' in query_lower:
+                                if metrics['roas'] > best_metric:
+                                    best_metric = metrics['roas']
+                                    best_city = city
+                                    metric_name = 'ROAS'
+                            else:
+                                if metrics['revenue'] > best_metric:
+                                    best_metric = metrics['revenue']
+                                    best_city = city
+                                    metric_name = 'revenue'
                     else:
-                        response = "No city performance data available."
-                else:
-                    # Show all cities
-                    response = "**City Performance:**\n\n"
-                    sorted_cities = sorted(city_metrics.items(), key=lambda x: x[1]['purchases'], reverse=True)
-                    for city, metrics in sorted_cities:
-                        response += f"**{city}:**\n"
-                        response += f"- Sales: {metrics['purchases']}\n"
-                        response += f"- Revenue: ${metrics['revenue']:,.2f}\n"
-                        response += f"- ROAS: {metrics['roas']:.2f}x\n\n"
-            else:
+                        # Default to sales/purchases
+                        for city, metrics in city_metrics.items():
+                            if metrics['purchases'] > best_metric:
+                                best_metric = metrics['purchases']
+                                best_city = city
+                                metric_name = 'sales'
+                
+                    # Format response for city queries
+                    if 'best' in query_lower or 'top' in query_lower:
+                        if best_city:
+                            metrics = city_metrics[best_city]
+                            response = f"**{best_city} is the best performing city**\n"
+                            response += f"- Sales: {metrics['purchases']}\n"
+                            response += f"- Revenue: ${metrics['revenue']:,.2f}\n"
+                            response += f"- Spend: ${metrics['spend']:,.2f}\n"
+                            response += f"- ROAS: {metrics['roas']:.2f}x\n"
+                            response += f"- Clicks: {metrics['clicks']:,}\n"
+                            response += f"- Impressions: {metrics['impressions']:,}"
+                        else:
+                            response = "No city performance data available."
+                    else:
+                        # Show all cities
+                        response = "**City Performance:**\n\n"
+                        sorted_cities = sorted(city_metrics.items(), key=lambda x: x[1]['purchases'], reverse=True)
+                        for city, metrics in sorted_cities:
+                            response += f"**{city}:**\n"
+                            response += f"- Sales: {metrics['purchases']}\n"
+                            response += f"- Revenue: ${metrics['revenue']:,.2f}\n"
+                            response += f"- ROAS: {metrics['roas']:.2f}x\n\n"
+                        
+            except Exception as e:
+                logger.warning(f"Could not use structured reasoning: {e}")
+                # Fallback to simple analysis if structured reasoning fails
+                understanding = None
+                
+            # Fallback logic if structured reasoning didn't work or wasn't city query
+            if not understanding or not understanding.requires_city_data:
                 # Original aggregation for non-city queries
                 total_purchases = 0
                 total_revenue = 0
