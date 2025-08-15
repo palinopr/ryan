@@ -93,6 +93,26 @@ async def parse_query_node(state: MetaCampaignState) -> Command:
     # Get the user query
     query = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
     
+    # Security check: Block questions about agency methods/internal processes
+    restricted_patterns = [
+        r'\b(how|what|why|explain|show).*?(method|process|strategy|technique|approach|system)\b',
+        r'\b(internal|proprietary|secret|confidential|agency)\b',
+        r'\b(how do you|how are you|how does|what is your)\b',
+        r'\b(algorithm|formula|calculation|logic)\b'
+    ]
+    
+    query_lower = query.lower()
+    for pattern in restricted_patterns:
+        if re.search(pattern, query_lower):
+            logger.warning(f"Blocked query about internal methods: {query}")
+            return Command(
+                update={
+                    'error': 'I can only provide information about your campaign performance metrics, not internal agency methods.',
+                    'messages': [AIMessage(content="I can help you with campaign metrics like sales, spend, impressions, and performance data. What specific metrics would you like to see?")]
+                },
+                goto=END
+            )
+    
     # Use AI to understand what the user wants
     settings = get_settings()
     
@@ -116,38 +136,63 @@ async def parse_query_node(state: MetaCampaignState) -> Command:
         prompt = f"""
         You have access to the Meta Ads SDK. Given this user query, determine what data to fetch.
         
+        IMPORTANT: You are a client-facing system. Only provide campaign performance data.
+        DO NOT discuss or reveal any internal agency methods, strategies, or processes.
+        
         User Query: {query}
         
-        Available SDK operations:
-        1. get_campaign_insights - Get campaign level metrics (NOTE: may not aggregate all data correctly)
-        2. get_adsets_insights - Get ad set level metrics (MORE ACCURATE for totals)
+        Available SDK operations based on what user is asking about:
         
-        IMPORTANT: For accurate sales/purchase totals, use get_adsets_insights at adset level
+        1. get_campaign_insights - Use when user asks about overall campaign performance
+        2. get_adsets_insights - Use when user asks about:
+           - Sales/purchases (most accurate for totals)
+           - City/location performance (adsets represent cities)
+           - Targeting details
+           - Audience breakdown
+        3. get_ads_insights - Use when user asks about:
+           - Individual ad performance
+           - Creative performance
+           - Ad copy performance
+        4. get_ad_creatives - Use when user asks about:
+           - What creatives are being used
+           - Ad images/videos
+           - Ad copy text
+        5. get_targeting_info - Use when user asks about:
+           - Who we're targeting
+           - Age, gender, interests
+           - Custom audiences
         
         Valid fields for insights:
-        - spend, impressions, clicks, reach, frequency
-        - cpm, cpc, ctr, cpp
-        - actions (contains purchases, add_to_cart, etc.)
-        - action_values (contains purchase revenue)
-        - campaign_name, campaign_id, adset_name, adset_id
+        - Basic: spend, impressions, clicks, reach, frequency
+        - Calculated: cpm, cpc, ctr, cpp
+        - Conversions: actions, action_values, conversions, purchase_roas
+        - Identifiers: campaign_name, campaign_id, adset_name, adset_id, ad_name, ad_id
+        - Targeting: age, gender, region, dma, publisher_platform
         
-        For sales/purchases: use "actions" field
-        For revenue: use "action_values" field
-        
-        Time periods: today, yesterday, last_7d, last_30d, maximum
+        Time periods: today, yesterday, last_7d, last_30d, this_month, maximum
         
         CRITICAL: Default to "maximum" (all-time data) UNLESS the user specifically mentions:
         - "today" → use "today"
         - "yesterday" → use "yesterday"
+        - "last week" → use "last_7d"
+        - "this month" → use "this_month"
         - Otherwise → use "maximum"
+        
+        Examples:
+        - "how many sales" → get_adsets_insights with actions field
+        - "show me ad performance" → get_ads_insights
+        - "what cities are we targeting" → get_adsets_insights (adset names = cities)
+        - "show me the creatives" → get_ad_creatives
+        - "who are we targeting" → get_targeting_info
         
         Return JSON:
         {{
-            "operation": "get_adsets_insights",
+            "operation": "appropriate_operation",
             "campaign_id": "120232002620350525",
-            "date_preset": "maximum or today or yesterday",
-            "fields": ["adset_name", "actions", "action_values", "spend", "impressions", "clicks"],
-            "level": "adset",
+            "date_preset": "maximum or specific period",
+            "fields": ["relevant fields for the query"],
+            "level": "campaign/adset/ad",
+            "breakdowns": ["age", "gender"] (only if demographics requested),
             "reasoning": "brief explanation"
         }}
         """

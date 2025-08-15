@@ -560,6 +560,170 @@ class DynamicMetaSDK:
             logger.error(f"Error getting all campaigns insights: {e}")
             return {"error": str(e), "message": "Failed to fetch campaigns insights"}
     
+    def get_ads_insights(self,
+                         campaign_id: str,
+                         date_preset: str = "maximum",
+                         fields: Optional[List[str]] = None) -> List[Dict]:
+        """
+        Get insights for all ads in a campaign
+        """
+        try:
+            if not campaign_id:
+                return []
+            
+            if not self.access_token:
+                return []
+            
+            logger.info(f"Getting ads insights for campaign {campaign_id}")
+            
+            campaign = Campaign(campaign_id)
+            
+            # Get all ads for this campaign
+            ads = campaign.get_ads(fields=['id', 'name', 'status', 'adset_id'])
+            
+            # Default fields if none specified
+            if not fields:
+                fields = [
+                    'ad_name', 'impressions', 'clicks', 'ctr', 'cpc',
+                    'spend', 'reach', 'frequency', 'actions', 'action_values',
+                    'inline_link_clicks', 'video_views'
+                ]
+            
+            all_insights = []
+            for ad in ads:
+                try:
+                    ad_obj = Ad(ad.get('id'))
+                    params = {
+                        'date_preset': date_preset,
+                        'level': 'ad'
+                    }
+                    
+                    insights = ad_obj.get_insights(fields=fields, params=params)
+                    for insight in insights:
+                        insight_data = insight.export_all_data()
+                        insight_data['ad_name'] = ad.get('name', 'Unknown')
+                        all_insights.append(insight_data)
+                        
+                except Exception as e:
+                    logger.warning(f"Error getting insights for ad {ad.get('id')}: {e}")
+                    continue
+            
+            logger.info(f"Returning {len(all_insights)} ad insights")
+            return all_insights
+            
+        except Exception as e:
+            logger.error(f"Error getting ads insights: {e}")
+            return []
+    
+    def get_ad_creatives(self, campaign_id: str) -> List[Dict]:
+        """
+        Get creative details for all ads in a campaign
+        """
+        try:
+            if not campaign_id:
+                return []
+            
+            campaign = Campaign(campaign_id)
+            ads = campaign.get_ads(fields=['id', 'name', 'creative', 'adset_id'])
+            
+            all_creatives = []
+            for ad in ads:
+                try:
+                    if 'creative' in ad:
+                        creative_id = ad['creative'].get('id')
+                        if creative_id:
+                            creative = AdCreative(creative_id)
+                            creative_data = creative.remote_read(fields=[
+                                'name', 'title', 'body', 'call_to_action_type',
+                                'image_url', 'video_id', 'thumbnail_url',
+                                'object_story_spec', 'link_url'
+                            ])
+                            creative_info = creative.export_all_data()
+                            creative_info['ad_name'] = ad.get('name')
+                            creative_info['ad_id'] = ad.get('id')
+                            all_creatives.append(creative_info)
+                except Exception as e:
+                    logger.warning(f"Error getting creative for ad {ad.get('id')}: {e}")
+                    continue
+            
+            return all_creatives
+            
+        except Exception as e:
+            logger.error(f"Error getting ad creatives: {e}")
+            return []
+    
+    def get_targeting_info(self, campaign_id: str) -> Dict:
+        """
+        Get targeting information from all adsets in a campaign
+        """
+        try:
+            if not campaign_id:
+                return {}
+            
+            campaign = Campaign(campaign_id)
+            adsets = campaign.get_ad_sets(fields=[
+                'id', 'name', 'targeting', 'optimization_goal',
+                'billing_event', 'bid_strategy', 'daily_budget'
+            ])
+            
+            targeting_summary = {
+                'locations': [],
+                'age_range': {},
+                'genders': [],
+                'interests': [],
+                'behaviors': [],
+                'custom_audiences': [],
+                'detailed_targeting': []
+            }
+            
+            for adset in adsets:
+                if 'targeting' in adset:
+                    targeting = adset['targeting']
+                    
+                    # Extract location targeting
+                    if 'geo_locations' in targeting:
+                        geo = targeting['geo_locations']
+                        if 'cities' in geo:
+                            for city in geo['cities']:
+                                targeting_summary['locations'].append(city.get('name', 'Unknown'))
+                        if 'countries' in geo:
+                            targeting_summary['locations'].extend(geo['countries'])
+                    
+                    # Extract demographics
+                    if 'age_min' in targeting:
+                        targeting_summary['age_range']['min'] = targeting['age_min']
+                    if 'age_max' in targeting:
+                        targeting_summary['age_range']['max'] = targeting['age_max']
+                    
+                    if 'genders' in targeting:
+                        targeting_summary['genders'] = targeting['genders']
+                    
+                    # Extract interests and behaviors
+                    if 'flexible_spec' in targeting:
+                        for spec in targeting['flexible_spec']:
+                            if 'interests' in spec:
+                                for interest in spec['interests']:
+                                    targeting_summary['interests'].append(interest.get('name'))
+                            if 'behaviors' in spec:
+                                for behavior in spec['behaviors']:
+                                    targeting_summary['behaviors'].append(behavior.get('name'))
+                    
+                    # Extract custom audiences
+                    if 'custom_audiences' in targeting:
+                        for audience in targeting['custom_audiences']:
+                            targeting_summary['custom_audiences'].append(audience.get('name', 'Custom Audience'))
+            
+            # Remove duplicates
+            targeting_summary['locations'] = list(set(targeting_summary['locations']))
+            targeting_summary['interests'] = list(set(targeting_summary['interests']))
+            targeting_summary['behaviors'] = list(set(targeting_summary['behaviors']))
+            
+            return targeting_summary
+            
+        except Exception as e:
+            logger.error(f"Error getting targeting info: {e}")
+            return {}
+    
     def get_audience_insights(self, object_id: str, object_type: str = "campaign") -> Dict:
         """
         Get detailed audience insights for any object
