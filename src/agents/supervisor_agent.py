@@ -75,42 +75,63 @@ class IntentAnalyzer:
                     context += f"Previous: {content}\n"
         
         prompt = f"""
-        You are a smart multilingual assistant helping analyze tour campaign messages.
-        Be intelligent about understanding what users really want, not just keywords.
+        You are an intelligent assistant that understands user intent even with typos and variations.
+        Your job is to UNDERSTAND what the user is asking, not just match keywords.
         
         {f"Conversation context: {context}" if context else ""}
         Current message: {message}
         
-        First, detect the language of the message. Common examples:
-        - Spanish: "como va miami", "cuales son las ciudades", "como esta creada la campaña"
-        - English: "how is miami doing", "what cities are there", "how was the campaign created"
+        CRITICAL: Be smart about typos and variations:
+        - "citie" or "citi" → "city"
+        - "bst" or "bes" → "best"
+        - "performng" → "performing"
+        - "campain" → "campaign"
+        - "targetting" → "targeting"
+        - "sale" → "sales"
+        - Missing spaces or extra spaces don't matter
         
-        Understand the REAL intent - don't match keywords blindly:
-        - Questions about specific locations should query that location's data
-        - Questions about campaign creation/setup are informational, not location-specific
-        - "las" in Spanish means "the" (plural), NOT Los Angeles
+        Common patterns to recognize:
+        - "best city/citie/citi" → user wants to know which city performs best
+        - "top location" → same as best city
+        - "which city has most sales" → city performance comparison
+        - "how many sales" → total sales across all cities
+        - "miami performance" → specific city metrics
         
-        Think about:
-        1. What language is the user speaking?
-        2. Are they asking about data or how something works?
-        3. Do they want specific metrics or general information?
+        Language detection:
+        - Spanish: "como va miami", "cuales son las ciudades", "mejores ciudades"
+        - English: "how is miami doing", "what cities", "best cities"
+        
+        Intent classification:
+        - If asking about cities, locations, performance → intent: "meta"
+        - If asking about sales, revenue, metrics → intent: "meta"
+        - If unclear but seems data-related → intent: "meta" (better to try than fail)
+        
+        Think step by step:
+        1. What is the user TRYING to ask (ignoring typos)?
+        2. Is this about campaign data/metrics? → Route to meta
+        3. Could this be interpreted as a data question? → Route to meta
         
         Return JSON:
         {{
             "language": "es" (Spanish), "en" (English), or detected language code,
-            "intent": "meta" (campaign data), "information" (how things work), "greeting", or "unknown",
-            "primary_agent": "meta" or null,
+            "intent": "meta" (for ANY campaign/data question), "greeting", or "unknown",
+            "primary_agent": "meta" (almost always),
             "scope": "specific" or "general",
-            "focus": what they're asking about,
+            "focus": what they're really asking about,
+            "corrected_query": the query with typos fixed,
             "detail_level": "brief" or "detailed",
             "reasoning": "why interpreted this way",
+            "confidence": 0.0 to 1.0,
             "extracted_entities": {{
-                "location": specific location if clearly mentioned (not guessed),
+                "location": specific location if mentioned,
                 "metric": specific metric if mentioned,
                 "time_period": if mentioned,
-                "question_type": "data" or "informational"
+                "question_type": "data" or "informational",
+                "likely_typos": ["original → corrected"]
             }}
         }}
+        
+        DEFAULT: If unsure, assume intent="meta" - it's better to try to answer than to fail.
         """
         
         response = await self.model.ainvoke([SystemMessage(content=prompt)])
@@ -150,20 +171,40 @@ async def analyze_intent_node(state: SupervisorState) -> Command[Literal["meta_a
         intent_analysis = await analyzer.analyze_intent(user_message, conversation_history=messages)
         
         intent = intent_analysis.get('intent')
-        logger.info(f"Intent detected: {intent}")
+        corrected_query = intent_analysis.get('corrected_query', user_message)
+        confidence = intent_analysis.get('confidence', 0.5)
+        
+        logger.info(f"Intent detected: {intent} (confidence: {confidence})")
         logger.info(f"Reasoning: {intent_analysis.get('reasoning')}")
         
-        # Store the analysis including language
+        # Log if we corrected typos
+        if corrected_query != user_message:
+            logger.info(f"Corrected query: '{user_message}' → '{corrected_query}'")
+            if intent_analysis.get('extracted_entities', {}).get('likely_typos'):
+                logger.info(f"Typos detected: {intent_analysis['extracted_entities']['likely_typos']}")
+        
+        # Store the analysis including language and corrected query
         update_data = {
-            "current_request": user_message,
+            "current_request": corrected_query,  # Use corrected version
             "intent": intent,
             "language": intent_analysis.get('language', 'en')  # Default to English if not detected
         }
         
-        # ALWAYS route to Meta Ads Agent for user queries
-        # GHL is only for backend operations, not user-facing
-        logger.info("Routing to Meta Ads Agent for campaign analysis")
-        return Command(update=update_data, goto="meta_ads_agent")
+        # Add corrected message to the messages for downstream agents
+        if corrected_query != user_message:
+            # Create a new message with the corrected text
+            corrected_msg = HumanMessage(content=corrected_query)
+            current_messages = list(messages)
+            current_messages[-1] = corrected_msg  # Replace the last message with corrected version
+            update_data["messages"] = current_messages
+        
+        # Route based on intent - default to meta for any data questions
+        if intent in ['meta', 'unknown'] or confidence > 0.3:
+            logger.info("Routing to Meta Ads Agent for campaign analysis")
+            return Command(update=update_data, goto="meta_ads_agent")
+        else:
+            logger.info(f"Low confidence ({confidence}), routing to Meta Ads Agent anyway")
+            return Command(update=update_data, goto="meta_ads_agent")
     
     except Exception as e:
         logger.error(f"Error analyzing intent: {e}")
