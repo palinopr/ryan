@@ -358,6 +358,7 @@ async def format_response_node(state: MetaCampaignState) -> Command:
     time_period = state.get('time_period', 'maximum')
     location = state.get('location')
     query = state.get('query', '')
+    query_lower = query.lower()  # Define query_lower for use throughout
     query_params = state.get('query_params', {})
     
     if not data:

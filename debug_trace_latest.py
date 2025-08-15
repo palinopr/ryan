@@ -214,7 +214,7 @@ def analyze_trace(trace_id):
         return None
 
 if __name__ == "__main__":
-    trace_id = "1f079948-0620-62b7-8194-71b5123682ff"
+    trace_id = "1f079e10-767b-6e7b-a232-430181c9ddb6"
     run = analyze_trace(trace_id)
     
     if run:
