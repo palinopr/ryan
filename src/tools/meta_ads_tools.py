@@ -243,19 +243,35 @@ class DynamicMetaSDK:
         if operation == "get_campaign_insights":
             # Handle case where campaign_id might be in object_id
             campaign_id = query.get("campaign_id") or query.get("object_id")
+            
+            # CRITICAL FIX: Handle both flat and nested params structure
+            date_preset = query.get("date_preset")
+            if not date_preset and "params" in query and isinstance(query["params"], dict):
+                date_preset = query["params"].get("date_preset")
+            if not date_preset:
+                date_preset = "maximum"  # Default to maximum for all-time data
+            
+            breakdowns = query.get("breakdowns")
+            if not breakdowns and "params" in query and isinstance(query["params"], dict):
+                breakdowns = query["params"].get("breakdowns")
+            
+            time_increment = query.get("time_increment")
+            if not time_increment and "params" in query and isinstance(query["params"], dict):
+                time_increment = query["params"].get("time_increment")
+            
             if not campaign_id:
                 # If no specific campaign, get all campaigns insights
                 return self.get_all_campaigns_insights(
-                    query.get("date_preset", "last_30d"),
+                    date_preset,
                     query.get("fields"),
-                    query.get("breakdowns")
+                    breakdowns
                 )
             return self.get_campaign_insights_dynamic(
                 campaign_id,
-                query.get("date_preset", "maximum"),  # Default to maximum for all-time data
+                date_preset,
                 query.get("fields"),
-                query.get("breakdowns"),
-                query.get("time_increment")
+                breakdowns,
+                time_increment
             )
         
         elif operation == "get_all_campaigns":
@@ -277,13 +293,29 @@ class DynamicMetaSDK:
             campaign_id = query.get("campaign_id") or query.get("object_id")
             if not campaign_id:
                 return {"error": "No campaign_id provided for adsets insights"}
-            date_preset = query.get("date_preset", "maximum")  # Default to maximum instead of today
+            
+            # CRITICAL FIX: Handle both flat and nested date_preset
+            # The AI might generate {"params": {"date_preset": "today"}} or {"date_preset": "today"}
+            date_preset = query.get("date_preset")
+            if not date_preset and "params" in query and isinstance(query["params"], dict):
+                date_preset = query["params"].get("date_preset")
+            if not date_preset:
+                date_preset = "maximum"  # Default to maximum instead of today
+                
             logger.info(f"get_adsets_insights called with date_preset: {date_preset}")
+            
+            # Similarly handle level from params if present
+            level = query.get("level")
+            if not level and "params" in query and isinstance(query["params"], dict):
+                level = query["params"].get("level")
+            if not level:
+                level = "adset"
+                
             return self.get_adsets_insights(
                 campaign_id,
                 date_preset,
                 query.get("fields"),
-                query.get("level", "adset")
+                level
             )
         
         elif operation == "custom_query":
