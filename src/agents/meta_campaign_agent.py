@@ -910,6 +910,21 @@ async def analyze_node(state: MetaCampaignState) -> Command[Literal["complete"]]
         except:
             pass
         
+    # CRITICAL FIX: Direct check for "today" in query as fallback
+    # The AI entity detection might miss this, so we check directly
+    if not detected_entities.get('time') and 'today' in full_query.lower():
+        detected_entities['time'] = 'today'
+        logger.info("Direct detection: Found 'today' in query")
+    elif not detected_entities.get('time') and 'yesterday' in full_query.lower():
+        detected_entities['time'] = 'yesterday'
+        logger.info("Direct detection: Found 'yesterday' in query")
+    elif not detected_entities.get('time') and 'last week' in full_query.lower():
+        detected_entities['time'] = 'last_7d'
+        logger.info("Direct detection: Found 'last week' in query")
+    elif not detected_entities.get('time') and 'this month' in full_query.lower():
+        detected_entities['time'] = 'this_month'
+        logger.info("Direct detection: Found 'this month' in query")
+    
     # Let AI determine intent instead of keyword matching
     is_comparison = detected_entities.get('comparison_type') is not None
     is_metric_question = detected_entities.get('metric') is not None
