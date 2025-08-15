@@ -155,22 +155,38 @@ async def parse_query_node(state: MetaCampaignState) -> Command:
     # Get the user query
     query = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
     
-    # Security check: Block questions about agency methods/internal processes
-    restricted_patterns = [
-        r'\b(how|what|why|explain|show).*?(method|process|strategy|technique|approach|system)\b',
-        r'\b(internal|proprietary|secret|confidential|agency)\b',
-        r'\b(how do you|how are you|how does|what is your)\b',
-        r'\b(algorithm|formula|calculation|logic)\b'
+    query_lower = query.lower()
+    
+    # SECURITY: Block ALL proprietary information questions
+    # Users can ONLY ask about performance metrics (sales, revenue, ROAS, etc.)
+    proprietary_keywords = [
+        # Targeting and audience
+        'interest', 'targeting', 'audience', 'demographic', 'behavior',
+        'custom audience', 'lookalike', 'retargeting',
+        # Technical details
+        'pixel', 'tracking', 'api', 'sdk', 'integration',
+        # Campaign structure
+        'how many ad', 'how many campaign', 'how many adset',
+        'number of ad', 'number of campaign', 'number of adset',
+        # Strategy and methods
+        'strategy', 'method', 'approach', 'technique', 'process',
+        'how do you', 'how are you', 'what are you using',
+        'why are you', 'explain how', 'show me how',
+        # Creative details
+        'creative', 'image', 'video', 'copy', 'headline',
+        # Internal details
+        'algorithm', 'formula', 'calculation', 'logic',
+        'internal', 'proprietary', 'secret', 'confidential'
     ]
     
-    query_lower = query.lower()
-    for pattern in restricted_patterns:
-        if re.search(pattern, query_lower):
-            logger.warning(f"Blocked query about internal methods: {query}")
+    # Check for proprietary information requests
+    for keyword in proprietary_keywords:
+        if keyword in query_lower:
+            logger.warning(f"Blocked proprietary query: {query}")
             return Command(
                 update={
-                    'error': 'I can only provide information about your campaign performance metrics, not internal agency methods.',
-                    'messages': [AIMessage(content="I can help you with campaign metrics like sales, spend, impressions, and performance data. What specific metrics would you like to see?")]
+                    'error': 'This information is proprietary to Outlet Media.',
+                    'messages': [AIMessage(content="This information is proprietary to Outlet Media. I can only provide performance metrics like sales, revenue, ROAS, spend, impressions, and clicks. What performance metrics would you like to see?")]
                 },
                 goto=END
             )
@@ -198,38 +214,32 @@ async def parse_query_node(state: MetaCampaignState) -> Command:
         prompt = f"""
         You have access to the Meta Ads SDK. Given this user query, determine what data to fetch.
         
-        IMPORTANT: You are a client-facing system. Only provide campaign performance data.
-        DO NOT discuss or reveal any internal agency methods, strategies, or processes.
+        IMPORTANT: You are a client-facing system. Only provide campaign PERFORMANCE METRICS.
+        DO NOT provide any proprietary information about targeting, audiences, creatives, or strategy.
         
         User Query: {query}
         
-        Available SDK operations based on what user is asking about:
+        Available SDK operations for PERFORMANCE METRICS ONLY:
         
-        1. get_campaign_insights - Use when user asks about overall campaign performance
-        2. get_adsets_insights - Use when user asks about:
-           - Sales/purchases (most accurate for totals)
-           - City/location performance (adsets represent cities)
-           - Targeting details
-           - Audience breakdown
-        3. get_ads_insights - Use when user asks about:
-           - Individual ad performance
-           - Creative performance
-           - Ad copy performance
-        4. get_ad_creatives - Use when user asks about:
-           - What creatives are being used
-           - Ad images/videos
-           - Ad copy text
-        5. get_targeting_info - Use when user asks about:
-           - Who we're targeting
-           - Age, gender, interests
-           - Custom audiences
+        1. get_campaign_insights - Use for overall campaign performance metrics
+        2. get_adsets_insights - Use for:
+           - Sales/purchases numbers
+           - City/location performance metrics (adsets represent cities)
+           - Performance by location
+        3. get_ads_insights - Use for:
+           - Performance metrics by ad
+           
+        NEVER use these operations (they contain proprietary information):
+        - get_ad_creatives (contains proprietary creative assets)
+        - get_targeting_info (contains proprietary targeting strategy)
         
-        Valid fields for insights:
+        Valid fields for insights (PERFORMANCE METRICS ONLY):
         - Basic: spend, impressions, clicks, reach, frequency
         - Calculated: cpm, cpc, ctr, cpp
         - Conversions: actions, action_values, conversions, purchase_roas
-        - Identifiers: campaign_name, campaign_id, adset_name, adset_id, ad_name, ad_id
-        - Targeting: age, gender, region, dma, publisher_platform
+        - Identifiers: campaign_name, adset_name (for city identification only)
+        
+        DO NOT include demographic breakdowns (age, gender) or targeting details
         
         Time periods: today, yesterday, last_7d, last_30d, this_month, maximum
         
@@ -245,15 +255,20 @@ async def parse_query_node(state: MetaCampaignState) -> Command:
         - ALWAYS include "adset_name" in fields when user asks about cities
         - Include all metrics fields for comparison
         
-        Examples:
+        Examples of ALLOWED queries:
         - "how many sales" → get_adsets_insights with actions field
-        - "show me ad performance" → get_ads_insights
-        - "what cities are we targeting" → get_adsets_insights with ["adset_name", "spend", "impressions", "clicks", "actions", "action_values"]
+        - "show me performance" → get_campaign_insights with all performance fields
         - "best performing city" → get_adsets_insights with ["adset_name", "spend", "impressions", "clicks", "actions", "action_values"]
         - "which city has most sales" → get_adsets_insights with ["adset_name", "actions", "action_values", "spend"]
         - "city performance" → get_adsets_insights with ["adset_name", "spend", "impressions", "clicks", "actions", "action_values"]
-        - "show me the creatives" → get_ad_creatives
-        - "who are we targeting" → get_targeting_info
+        - "revenue today" → get_adsets_insights with action_values field
+        - "ROAS this month" → get_campaign_insights with spend and action_values
+        
+        Examples of BLOCKED queries (return error):
+        - "what interests are you targeting" → BLOCKED (proprietary)
+        - "show me the creatives" → BLOCKED (proprietary)
+        - "who are we targeting" → BLOCKED (proprietary)
+        - "how many ads do we have" → BLOCKED (proprietary)
         
         Return JSON:
         {{

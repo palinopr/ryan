@@ -1,12 +1,12 @@
 {
-  "trace_id": "1f079e10-767b-6e7b-a232-430181c9ddb6",
-  "timestamp": "2025-08-15 14:06:24.755861",
+  "trace_id": "1f079e2a-6432-6bb6-84da-cbfbd84afcc8",
+  "timestamp": "2025-08-15 14:18:00.767770",
   "status": "success",
   "inputs": {
     "messages": [
       {
         "role": "user",
-        "content": "best citie yesterday"
+        "content": "what interest you are using?"
       }
     ],
     "contact_id": "c2FtYUL7h7rsv37qUJzU",
@@ -15,27 +15,27 @@
   "outputs": {
     "messages": [
       {
-        "content": "best citie yesterday",
+        "content": "what interest you are using?",
         "additional_kwargs": {},
         "response_metadata": {},
         "type": "human",
-        "id": "47af9fe1-ae3b-4763-9f22-b27d0374a229",
+        "id": "0b29c162-73e2-43bc-882f-9a7dedae6877",
         "example": false
       },
       {
-        "content": "best city yesterday",
+        "content": "what interest are you using?",
         "additional_kwargs": {},
         "response_metadata": {},
         "type": "human",
-        "id": "12cad498-082e-4628-aa84-311150ff5dd6",
+        "id": "ef22bb7a-3c9d-4f25-98e3-5aabb13f34a6",
         "example": false
       },
       {
-        "content": "The best city yesterday was determined by the highest total revenue or sales. However, specific city data is not provided in the aggregated data.",
+        "content": "No data available for your request.",
         "additional_kwargs": {},
         "response_metadata": {},
         "type": "ai",
-        "id": "49ceb696-5953-4ec5-9e8a-8328dd09128e",
+        "id": "7d75a128-11c0-4808-92f5-6424082b0c8a",
         "example": false,
         "tool_calls": [],
         "invalid_tool_calls": []
@@ -53,16 +53,16 @@
       "admin"
     ],
     "ghl_message_sent": true,
-    "ghl_message_id": "DnMEDtpkIhrHFUSZmVFb",
-    "current_request": "best city yesterday",
+    "ghl_message_id": "1UGB9ng6Ep5A6LexKw1c",
+    "current_request": "what interest are you using?",
     "intent": "meta",
     "language": "en",
     "meta_response": {
-      "data": "The best city yesterday was determined by the highest total revenue or sales. However, specific city data is not provided in the aggregated data.",
+      "data": null,
       "metrics": null,
       "insights": null
     },
-    "final_response": "The best city yesterday was determined by the highest total revenue or sales. However, specific city data is not provided in the aggregated data.",
+    "final_response": "No data available for your request.",
     "is_authorized": true
   },
   "error": null
